@@ -1,7 +1,51 @@
-// Bloqueo con PIN y huella. Tapa la pantalla; no cifra los datos.
+// Bloqueo con PIN, huella (Android) o Face ID (web). Tapa la pantalla; no cifra los datos.
 const LOCK = 'lock';
 const bioPlugin = plugins?.BiometricAuthNative;
-let lockData = null, asking = false, hiddenAt = 0;
+let lockData = null, asking = false, hiddenAt = 0, canFace = false;
+const FACE = /iPhone|iPad/.test(navigator.userAgent) ? 'Face ID' : 'huella o cara';
+const random = (n) => crypto.getRandomValues(new Uint8Array(n));
+const toText = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes)));
+const toBytes = (text) => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
+
+/* Face ID en la web: una llave de acceso del propio teléfono (WebAuthn). No hay servidor,
+   así que solo se comprueba que el teléfono verificó a la persona. Safari exige un toque. */
+async function enableFace() {
+  try {
+    const key = await navigator.credentials.create({ publicKey: {
+      challenge: random(32), rp: { name: 'Dinero' }, user: { id: random(16), name: 'Dinero', displayName: 'Dinero' },
+      pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+      authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' }, timeout: 60000,
+    } });
+    const next = { ...lockData, face: toText(key.rawId) };
+    await store.set(LOCK, JSON.stringify(next));
+    lockData = next;
+    render(true);
+    toast(`${FACE} activado`);
+  } catch (e) { console.warn(e.message); toast(`No se activó ${FACE}. Tu PIN sigue funcionando.`); }
+}
+
+async function disableFace() {
+  const { face, ...next } = lockData;
+  try { await store.set(LOCK, JSON.stringify(next)); } catch { toast('No se pudo guardar.'); return; }
+  lockData = next;
+  render(true);
+  toast(`${FACE} desactivado`);
+}
+
+async function faceUnlock(error) {
+  if (asking || !window.locked) return;
+  asking = true;
+  try {
+    const result = await navigator.credentials.get({ publicKey: {
+      challenge: random(32), userVerification: 'required', timeout: 60000,
+      allowCredentials: [{ type: 'public-key', id: toBytes(lockData.face), transports: ['internal'] }],
+    } });
+    // Bit 2 de las marcas: el teléfono verificó la cara, huella o código.
+    if (!(new Uint8Array(result.response.authenticatorData)[32] & 4)) throw new Error('sin verificar');
+    unlock();
+  } catch (e) { console.warn(e.message); error.textContent = `No se pudo usar ${FACE}. Escribe tu PIN.`; }
+  asking = false;
+}
 
 async function pinHash(salt, pin) {
   const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(salt + pin));
@@ -48,12 +92,14 @@ function lockNow() {
     if (problem) { error.textContent = problem; input.value = ''; } else unlock();
   } }, badge('home', '#C6F24E'), el('h2', { textContent: 'Dinero está bloqueado' }), input, error,
     el('button', { className: 'primary', textContent: 'Desbloquear' }),
-    lockData.bio && bioPlugin ? button('Usar huella', fingerprint) : null);
+    lockData.bio && bioPlugin ? button('Usar huella', fingerprint) : null,
+    lockData.face && canFace ? button(`Desbloquear con ${FACE}`, () => faceUnlock(error)) : null);
   document.body.append(el('div', { id: 'lock' }, form));
   if (lockData.bio && bioPlugin) fingerprint();
 }
 
 window.gate = async () => {
+  if (!plugins) canFace = await window.PublicKeyCredential?.isUserVerifyingPlatformAuthenticatorAvailable?.().catch(() => false) || false;
   const saved = await store.get(LOCK);
   if (saved) { lockData = JSON.parse(saved); lockNow(); }
 };
@@ -81,7 +127,7 @@ async function lockForm() {
       if (!/^\d{4,6}$/.test(v.pin)) return 'El PIN debe tener de 4 a 6 números.';
       if (v.pin !== v.again) return 'Los dos PIN no coinciden.';
       const salt = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
-      const next = { salt, hash: await pinHash(salt, v.pin), bio: hasBio && v.bio === 'yes', fails: 0, until: 0 };
+      const next = { salt, hash: await pinHash(salt, v.pin), bio: hasBio && v.bio === 'yes', fails: 0, until: 0, ...(lockData?.face && { face: lockData.face }) };
       try { await store.set(LOCK, JSON.stringify(next)); } catch { return 'No se pudo guardar.'; }
       lockData = next;
       render(true);
@@ -100,4 +146,6 @@ async function lockForm() {
 }
 
 settingsSections.push((view) => view.append(section('Seguridad'),
-  el('div', {}, button(lockData ? 'Cambiar o quitar el bloqueo' : `Activar bloqueo con PIN${bioPlugin ? ' o huella' : ''}`, lockForm))));
+  el('div', {}, button(lockData ? 'Cambiar o quitar el bloqueo' : `Activar bloqueo con PIN${bioPlugin ? ' o huella' : ''}`, lockForm),
+    canFace && lockData ? button(lockData.face ? `Quitar ${FACE}` : `Usar ${FACE}`, lockData.face ? disableFace : enableFace) : null,
+    canFace && !lockData ? empty(`Activa primero un PIN para poder usar ${FACE}.`) : null)));
