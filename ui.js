@@ -49,6 +49,9 @@ const ICONS = {
   bank: 'M3 9l9-6 9 6zM5 10v8M10 10v8M14 10v8M19 10v8M3 21h18',
   gear: 'M12 9a3 3 0 100 6 3 3 0 000-6zM12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2',
   swap: 'M4 8h15l-4-4M20 16H5l4 4',
+  list: 'M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01',
+  chart: 'M4 20h16M7 20v-8M12 20V4M17 20v-12',
+  target: 'M12 3a9 9 0 100 18 9 9 0 000-18zM12 8a4 4 0 100 8 4 4 0 000-8zM12 12h.01',
 };
 
 function svgEl(tag, attrs) {

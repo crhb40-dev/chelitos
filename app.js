@@ -275,7 +275,7 @@ function categoryForm(c) {
     fields: [
       { key: 'type', label: 'Para', type: 'seg', options: [['out', 'Gastos'], ['in', 'Entradas']], show: () => !c },
       { key: 'name', label: 'Nombre', type: 'text' },
-      { key: 'icon', label: 'Icono', type: 'icons', options: Object.keys(ICONS).filter((k) => k !== 'gear' && k !== 'swap').map((k, i) => [k, `Icono ${i + 1}`]) },
+      { key: 'icon', label: 'Icono', type: 'icons', options: Object.keys(ICONS).filter((k) => !['gear', 'swap', 'list', 'chart', 'target'].includes(k)).map((k, i) => [k, `Icono ${i + 1}`]) },
       { key: 'color', label: 'Color', type: 'colors', options: L.COLORS.map((x, i) => [x, `Color ${i + 1}`]) },
     ],
     onSave: (v) => {
@@ -376,7 +376,11 @@ function go(next) {
 
 $('add').onclick = () => moveForm();
 $('sheet').oncancel = (e) => { e.preventDefault(); closeSheet(); };
-for (const b of document.querySelectorAll('[data-tab]')) b.onclick = () => go(b.dataset.tab);
+const NAV_ICONS = { home: 'home', moves: 'list', reports: 'chart', plans: 'target' };
+for (const b of document.querySelectorAll('[data-tab]')) {
+  b.prepend(icon(NAV_ICONS[b.dataset.tab], 22));
+  b.onclick = () => go(b.dataset.tab);
+}
 plugins?.App.addListener('backButton', () => {
   if (window.locked) plugins.App.exitApp();
   else if ($('sheet').open) closeSheet();

@@ -1,5 +1,5 @@
 // Guarda la app para usarla sin internet. Al cambiar cualquier archivo, sube VERSION.
-const VERSION = 'dinero-2.6';
+const VERSION = 'dinero-2.7';
 const FILES = ['./', 'index.html', 'style.css', 'logic.js', 'ui.js', 'app.js', 'plans.js', 'lock.js', 'web.js', 'manifest.webmanifest',
   'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png',
   'fonts/space-grotesk-latin-400-normal.woff2', 'fonts/space-grotesk-latin-500-normal.woff2', 'fonts/space-grotesk-latin-700-normal.woff2'];
