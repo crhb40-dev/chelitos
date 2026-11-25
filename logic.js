@@ -225,7 +225,35 @@
     d.accounts = d.accounts.filter((a) => a.id !== id);
   }
 
+  // Teclas del teclado propio: dígitos, punto y borrar.
+  function keypad(value, key) {
+    if (key === '⌫') return value.slice(0, -1);
+    if (key === '.') return value.includes('.') ? value : (value || '0') + '.';
+    const next = value === '0' ? key : value + key;
+    return /^\d{0,9}(\.\d{0,2})?$/.test(next) ? next : value;
+  }
+
+  const ACCENTS = [['#C6F24E', 'Lima'], ['#7CC4FF', 'Azul'], ['#C4B0FF', 'Morado'], ['#FF9EC8', 'Rosa'], ['#FFB35C', 'Naranja']];
+  const BLOCKS = ['accounts', 'spending', 'budgets', 'upcoming', 'recent']; // secciones del inicio
+
+  // Preferencias de la persona. No van en la copia; si están dañadas se usan las de fábrica.
+  function prefs(text) {
+    let p;
+    try { p = JSON.parse(text); } catch { p = null; }
+    p = p && typeof p === 'object' && !Array.isArray(p) ? p : {};
+    const blocks = (list) => [...new Set(Array.isArray(list) ? list : [])].filter((b) => BLOCKS.includes(b));
+    const order = blocks(p.order);
+    return {
+      accent: ACCENTS.some(([c]) => c === p.accent) ? p.accent : ACCENTS[0][0],
+      hidden: p.hidden === true,
+      order: [...order, ...BLOCKS.filter((b) => !order.includes(b))],
+      off: blocks(p.off),
+      last: p.last && typeof p.last === 'object' ? p.last : {},
+    };
+  }
+
   const api = {
+    keypad, ACCENTS, BLOCKS, prefs,
     COLORS, FIXED, defaultData, parseAmount, today, shiftMonth, nextDate, load, balances, summary,
     BUDGET, view, curOf, spentByKind, windowEnd, lastMonths, search, budgets, debtPaid, payRecurring, removeCategory, removeAccount,
   };

@@ -183,9 +183,12 @@ screens.plans = (view) => {
   block('Deudas', '+ Deuda', () => debtForm(), here.debts.map(debtRow), 'Apunta lo que debes y lo que te deben.');
 };
 
-homeSections.push((view) => {
-  const budgets = L.budgets(mine(), L.today().slice(0, 7)).slice(0, 3);
+homeBlocks.budgets = ['Presupuestos', (view, { here }) => {
+  const budgets = L.budgets(here, L.today().slice(0, 7)).slice(0, 3);
   if (budgets.length) view.append(section('Presupuestos', 'Ver planes', () => go('plans')), el('div', { className: 'card' }, ...budgets.map(budgetRow)));
+}];
+
+homeBlocks.upcoming = ['Próximos pagos', (view) => {
   const next = upcoming().slice(0, 3);
   if (next.length) view.append(section('Próximos pagos', 'Ver planes', () => go('plans')), el('div', { className: 'card' }, ...next.map(recurringRow)));
-});
+}];

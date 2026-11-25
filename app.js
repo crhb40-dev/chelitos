@@ -4,7 +4,7 @@ let data = L.defaultData();
 let tab = 'home', month = L.today().slice(0, 7), picked = null, ready = false, chartEnd = null;
 const filters = { text: '', category: '', account: '', from: '', to: '' };
 const screens = {};           // nombre -> función(view)
-const homeSections = [];      // bloques extra del inicio
+const homeBlocks = {};        // secciones del inicio: id -> [nombre, función(view, datos)]
 const settingsSections = [];  // bloques extra de ajustes
 
 const account = (id) => data.accounts.find((a) => a.id === id);
@@ -35,9 +35,18 @@ async function update(change, done) {
     console.error(e);
     return 'No se pudo guardar. Revisa los datos.';
   }
+  const before = data;
   data = next;
   render(true);
-  if (done) toast(done);
+  if (!done) return;
+  // Deshacer solo vale si no hubo otro cambio después.
+  toast(done, async () => {
+    if (data !== next) { toast('Ya hiciste otro cambio; no se puede deshacer.'); return; }
+    try { await store.set(KEY, JSON.stringify(before)); } catch { toast('No se pudo deshacer.'); return; }
+    data = before;
+    render(true);
+    toast('Deshecho');
+  });
 }
 
 const upsert = (list, item) => {
@@ -46,8 +55,11 @@ const upsert = (list, item) => {
 };
 
 /* ---------- Movimientos ---------- */
-function moveForm(x) {
-  const first = data.accounts.find((a) => a.currency === cur);
+function moveForm(x, preset = {}) {
+  const quick = !x; // al anotar: monto, tocar categoría y listo
+  const type = preset.type || 'out';
+  const remembered = account(prefs.last[`${cur}:${type}`]);
+  const first = remembered?.currency === cur ? remembered : data.accounts.find((a) => a.currency === cur);
   if (!x && !first) { toast(`Primero crea una cuenta en ${CUR[cur][0].toLowerCase()}.`); accountForm(); return; }
   const cross = (v) => v.type === 'transfer' && Boolean(v.to) && curOf(v.to) !== curOf(v.account);
   const linked = x?.debt; // un abono mantiene su tipo y categoría
@@ -60,25 +72,35 @@ function moveForm(x) {
   };
   const isType = (...t) => (v) => t.includes(v.type);
   openForm({
-    title: x ? 'Editar movimiento' : 'Nuevo movimiento',
+    title: x ? 'Editar movimiento' : 'Anotar',
+    showSave: quick ? isType('transfer') : undefined,
+    moreLabel: (v) => `${account(v.account)?.name || KIND[v.method]?.[0] || ''} · ${v.date ? dayName(v.date) : 'sin fecha'}`,
     values: x ? { ...x, method: account(x.account).kind, amount: asInput(x.amount), received: asInput(x.received) }
-      : { type: 'out', method: first.kind, account: first.id, date: L.today() },
-    fields: [
-      { key: 'type', label: 'Tipo', type: 'seg', options: [['out', 'Gasto'], ['in', 'Entrada'], ['transfer', 'Transferir']], show: () => !linked },
-      { key: 'amount', label: (v) => `Monto (${symbol(curOf(v.account) || home)})`, type: 'money' },
-      { key: 'category', label: 'Categoría', type: 'chips', options: (v) => categoryOptions(v.type === 'in' ? 'in' : 'out'), show: (v) => !linked && isType('in', 'out')(v) },
-      { key: 'method', label: (v) => v.type === 'in' ? 'Cómo lo recibiste' : 'Con qué pagaste', type: 'seg', titled: true,
-        options: Object.entries(KIND).map(([k, kind]) => [k, kind[0]]), show: isType('in', 'out') },
-      { key: 'account', label: 'Cuenta', type: 'select', options: payOptions },
-      { key: 'to', label: 'Hacia la cuenta', type: 'select', options: (v) => accountOptions().filter(([id]) => id !== v.account), show: isType('transfer') },
-      { key: 'received', label: (v) => `Cuánto llega (${symbol(curOf(v.to) || cur)})`, type: 'money', show: cross },
-      { key: 'note', label: 'Nota', type: 'text', placeholder: 'Opcional' },
-      { key: 'date', label: 'Fecha', type: 'date' },
-    ],
+      : { type, method: first.kind, account: first.id, date: L.today() },
+    fields: (() => {
+      const hide = quick && { more: true };
+      const forTransfer = quick && { more: true, always: isType('transfer') };
+      const category = { key: 'category', label: quick ? 'Toca una categoría para guardar' : 'Categoría', type: 'chips', submit: quick,
+        options: (v) => categoryOptions(v.type === 'in' ? 'in' : 'out'), show: (v) => !linked && isType('in', 'out')(v) };
+      return [
+        { key: 'type', label: 'Tipo', type: 'seg', options: [['out', 'Gasto'], ['in', 'Entrada'], ['transfer', 'Transferir']], show: () => !linked },
+        { key: 'amount', label: (v) => `Monto (${symbol(curOf(v.account) || home)})`, type: quick ? 'keypad' : 'money' },
+        ...(quick ? [] : [category]),
+        { key: 'method', label: (v) => v.type === 'in' ? 'Cómo lo recibiste' : 'Con qué pagaste', type: 'seg', titled: true, ...hide,
+          options: Object.entries(KIND).map(([k, kind]) => [k, kind[0]]), show: isType('in', 'out') },
+        { key: 'account', label: 'Cuenta', type: 'select', options: payOptions, ...forTransfer },
+        { key: 'to', label: 'Hacia la cuenta', type: 'select', options: (v) => accountOptions().filter(([id]) => id !== v.account), show: isType('transfer'), ...forTransfer },
+        { key: 'received', label: (v) => `Cuánto llega (${symbol(curOf(v.to) || cur)})`, type: 'money', show: cross, ...forTransfer },
+        { key: 'note', label: 'Nota', type: 'text', placeholder: 'Opcional', ...hide },
+        { key: 'date', label: 'Fecha', type: 'date', ...hide },
+        ...(quick ? [category] : []),
+      ];
+    })(),
     onSave: (v) => {
       const amount = L.parseAmount(v.amount);
       if (!amount) return 'Escribe un monto mayor que 0. Usa punto para los centavos.';
       if (!v.date) return 'Elige una fecha.';
+      if (quick && v.type !== 'transfer' && !v.picked) return 'Toca una categoría para guardar.';
       if (v.type === 'transfer' && !v.to) return 'Para transferir necesitas dos cuentas. Crea otra en Ajustes.';
       const received = cross(v) ? L.parseAmount(v.received) : null;
       if (cross(v) && !received) return 'Escribe cuánto llega a la otra cuenta.';
@@ -93,7 +115,11 @@ function moveForm(x) {
       // Pasa al apartado donde quedó anotado, para que se vea.
       const before = cur;
       cur = created ? home : curOf(item.account);
-      return update((d) => { if (created) d.accounts.push(created); upsert(d.movements, item); }, 'Guardado').then((problem) => { if (problem) cur = before; return problem; });
+      return update((d) => { if (created) d.accounts.push(created); upsert(d.movements, item); }, 'Guardado').then((problem) => {
+        if (problem) cur = before;
+        else if (quick && item.type !== 'transfer') savePrefs({ last: { ...prefs.last, [`${cur}:${item.type}`]: item.account } });
+        return problem;
+      });
     },
     onDelete: x && (() => update((d) => { d.movements = d.movements.filter((m) => m.id !== x.id); }, 'Borrado')),
   });
@@ -117,34 +143,44 @@ function moveRow(x) {
 /* ---------- Inicio ---------- */
 screens.home = (view) => {
   const here = mine(), now = L.today().slice(0, 7), s = L.summary(here, now), b = L.balances(data, cur);
-  const big = el('div', { className: 'big' + (b.total < 0 ? ' neg' : '') });
+  const big = el('div', { className: 'big' + (b.total < 0 && !prefs.hidden ? ' neg' : '') });
+  const eye = el('button', { className: 'icon-btn', ariaLabel: prefs.hidden ? 'Mostrar saldos' : 'Ocultar saldos', ariaPressed: String(prefs.hidden),
+    onclick: async () => { await savePrefs({ hidden: !prefs.hidden }); render(true); } }, icon(prefs.hidden ? 'eyeoff' : 'eye'));
   view.append(
-    el('div', { className: 'head' }, el('h1', { textContent: 'Mi dinero' }),
-      el('button', { className: 'icon-btn', ariaLabel: 'Ajustes', onclick: () => go('settings') }, icon('gear'))),
+    el('div', { className: 'head' }, el('h1', { textContent: 'Mi dinero' }), el('div', { className: 'tools' }, eye,
+      el('button', { className: 'icon-btn', ariaLabel: 'Ajustes', onclick: () => go('settings') }, icon('gear')))),
     curSwitch(),
     el('div', { className: 'card hero' }, el('div', { className: 'dim', textContent: `Saldo total en ${CUR[cur][0].toLowerCase()}` }), big,
       el('div', { className: 'dim', textContent: monthName(now) }),
       el('div', { className: 'duo' },
         el('div', {}, '▲ Entró', el('b', { className: 'pos', textContent: money(s.income) })),
         el('div', {}, '▼ Salió', el('b', { className: 'neg', textContent: money(s.expense) })))),
-    section('Cuentas', '+ Cuenta', () => accountForm()),
-    el('div', { className: 'scroll' }, ...(here.accounts.length ? [] : [button(`Crear cuenta en ${CUR[cur][0].toLowerCase()}`, () => accountForm())]), ...here.accounts.map((a) => el('button', { className: 'tile', onclick: () => accountForm(a) },
-      badge(KIND[a.kind][1], KIND[a.kind][2]), el('span', { className: 'dim', textContent: a.name }),
-      el('b', { className: b.byAccount[a.id] < 0 ? 'neg' : '', textContent: money(b.byAccount[a.id]) })))));
+    el('div', { className: 'actions' }, button('− Gasté', () => moveForm(null, { type: 'out' }), 'spend'),
+      button('+ Me entró', () => moveForm(null, { type: 'in' }), 'earn')));
   countUp(big, b.total);
+  for (const id of prefs.order) if (!prefs.off.includes(id)) homeBlocks[id]?.[1](view, { here, s, b });
+};
 
-  if (s.expense) {
-    view.append(section('En qué gastas', 'Ver reportes', () => go('reports')),
-      el('div', { className: 'card' }, ...s.byCategory.slice(0, 3).map(([id, v]) => {
-        const c = category(id);
-        return el('div', {}, line({ lead: badge(c.icon, c.color), title: c.name, sub: `${Math.round(v * 100 / s.expense)}% de tus gastos`, value: money(v) }), track(v / s.expense, c.color));
-      })));
-  }
-  for (const add of homeSections) add(view);
+homeBlocks.accounts = ['Cuentas', (view, { here, b }) => view.append(section('Cuentas', '+ Cuenta', () => accountForm()),
+  el('div', { className: 'scroll' }, ...(here.accounts.length ? [] : [button(`Crear cuenta en ${CUR[cur][0].toLowerCase()}`, () => accountForm())]),
+    ...here.accounts.map((a) => el('button', { className: 'tile', onclick: () => accountForm(a) },
+      badge(KIND[a.kind][1], KIND[a.kind][2]), el('span', { className: 'dim', textContent: a.name }),
+      el('b', { className: b.byAccount[a.id] < 0 && !prefs.hidden ? 'neg' : '', textContent: money(b.byAccount[a.id]) })))))];
+
+homeBlocks.spending = ['En qué gastas', (view, { s }) => {
+  if (!s.expense) return;
+  view.append(section('En qué gastas', 'Ver reportes', () => go('reports')),
+    el('div', { className: 'card' }, ...s.byCategory.slice(0, 3).map(([id, v]) => {
+      const c = category(id);
+      return el('div', {}, line({ lead: badge(c.icon, c.color), title: c.name, sub: `${Math.round(v * 100 / s.expense)}% de tus gastos`, value: money(v) }), track(v / s.expense, c.color));
+    })));
+}];
+
+homeBlocks.recent = ['Últimos movimientos', (view, { here }) => {
   const recent = L.search(here).slice(0, 5);
   view.append(section('Últimos movimientos', recent.length ? 'Ver todos' : '', () => go('moves')),
-    el('div', {}, ...(recent.length ? recent.map(moveRow) : [empty('Aún no hay movimientos. Toca + para anotar el primero.')])));
-};
+    el('div', {}, ...(recent.length ? recent.map(moveRow) : [empty('Aún no hay movimientos. Toca Gasté o Me entró.')])));
+}];
 
 /* ---------- Buscar ---------- */
 screens.moves = (view) => {
@@ -275,7 +311,7 @@ function categoryForm(c) {
     fields: [
       { key: 'type', label: 'Para', type: 'seg', options: [['out', 'Gastos'], ['in', 'Entradas']], show: () => !c },
       { key: 'name', label: 'Nombre', type: 'text' },
-      { key: 'icon', label: 'Icono', type: 'icons', options: Object.keys(ICONS).filter((k) => !['gear', 'swap', 'list', 'chart', 'target'].includes(k)).map((k, i) => [k, `Icono ${i + 1}`]) },
+      { key: 'icon', label: 'Icono', type: 'icons', options: Object.keys(ICONS).filter((k) => !['gear', 'swap', 'list', 'chart', 'target', 'eye', 'eyeoff'].includes(k)).map((k, i) => [k, `Icono ${i + 1}`]) },
       { key: 'color', label: 'Color', type: 'colors', options: L.COLORS.map((x, i) => [x, `Color ${i + 1}`]) },
     ],
     onSave: (v) => {
@@ -291,6 +327,24 @@ screens.settings = (view) => {
     section('Cuentas', '+ Nueva', () => accountForm()),
     el('div', { className: 'card' }, ...data.accounts.map((a) => line({ lead: badge(KIND[a.kind][1], KIND[a.kind][2]), title: a.name, sub: `${KIND[a.kind][0]} · ${CUR[a.currency][0]}`, onclick: () => accountForm(a) }))));
   for (const add of settingsSections) add(view);
+  const set = async (change) => { await savePrefs(change); render(true); };
+  const move = (i, step) => { const order = [...prefs.order]; [order[i], order[i + step]] = [order[i + step], order[i]]; set({ order }); };
+  const arrow = (textContent, ariaLabel, disabled, onclick) => el('button', { className: 'mini', textContent, ariaLabel, disabled, onclick });
+  view.append(section('Color'),
+    el('div', { className: 'swatches', role: 'group', ariaLabel: 'Color principal' }, ...L.ACCENTS.map(([color, name]) => {
+      const b = el('button', { ariaPressed: String(prefs.accent === color), onclick: () => set({ accent: color }) }, el('i'), name);
+      b.firstChild.style.background = color;
+      return b;
+    })),
+    section('Secciones del inicio'),
+    el('div', { className: 'card' }, ...prefs.order.map((id, i) => {
+      const name = homeBlocks[id][0], off = prefs.off.includes(id);
+      return el('div', { className: 'order' }, el('span', { textContent: name, className: off ? 'dim' : '' }),
+        arrow('↑', `Subir ${name}`, i === 0, () => move(i, -1)),
+        arrow('↓', `Bajar ${name}`, i === prefs.order.length - 1, () => move(i, 1)),
+        el('button', { className: 'mini wideb', textContent: off ? 'Mostrar' : 'Ocultar', ariaLabel: `${off ? 'Mostrar' : 'Ocultar'} ${name}`,
+          onclick: () => set({ off: off ? prefs.off.filter((x) => x !== id) : [...prefs.off, id] }) }));
+    })));
   view.append(section('Categorías', '+ Nueva', () => categoryForm()),
     el('div', { className: 'card' }, ...data.categories.map((c) => line({ lead: badge(c.icon, c.color), title: c.name, sub: c.type === 'in' ? 'Entradas' : 'Gastos', onclick: () => categoryForm(c) }))),
     section('Copia de seguridad'),
@@ -419,6 +473,8 @@ async function start() {
       const old = await store.get(OLD_KEY);
       if (old) { data = L.load(old); await store.set(KEY, JSON.stringify(data)); }
     }
+    prefs = L.prefs(await store.get('prefs'));
+    applyPrefs();
     await window.gate?.(); // bloquea antes de mostrar nada
     ready = true;
     render();
