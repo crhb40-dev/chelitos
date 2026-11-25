@@ -5,7 +5,7 @@ const drop = (key, id, done) => () => update((d) => { d[key] = d[key].filter((x)
 
 /* ---------- Presupuestos ---------- */
 function budgetForm(c) {
-  const field = cur === 'usd' ? 'budgetUsd' : 'budget';
+  const field = L.BUDGET[cur];
   openForm({
     title: c ? `Límite de ${c.name}` : 'Nuevo límite mensual',
     values: c ? { category: c.id, amount: asInput(c[field]) } : {},

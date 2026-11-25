@@ -90,6 +90,8 @@ input.money{font-size:30px;font-weight:700;min-height:62px}
 #lock{position:fixed;inset:0;z-index:30;background:var(--bg);display:grid;place-items:center;padding:28px;animation:fade .25s both}
 #lock form{width:100%;max-width:320px;align-items:stretch;text-align:center}
 #lock .badge{align-self:center;color:var(--lime)}
+main.sliding>*{animation:none}
+.ghost{position:fixed;margin:0;background:var(--bg);pointer-events:none;z-index:5}
 @keyframes up{from{opacity:0;transform:translateY(16px)}}
 @keyframes grow{from{transform:scaleX(0)}}
 @keyframes rise{from{transform:scaleY(0)}}

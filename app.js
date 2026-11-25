@@ -14,10 +14,13 @@ const mine = () => L.view(data, cur);
 const curOf = (id) => L.curOf(data, id);
 // Sin moneda: todas las cuentas, indicando cuáles son en dólares.
 const accountOptions = (k) => data.accounts.filter((a) => !k || a.currency === k)
-  .map((a) => [a.id, !k && a.currency === 'usd' ? `${a.name} (US$)` : a.name]);
+  .map((a) => [a.id, !k && a.currency !== 'peso' ? `${a.name} (${symbol(a.currency)})` : a.name]);
 const curSwitch = () => el('div', { className: 'seg cur', role: 'group', ariaLabel: 'Moneda' },
   ...Object.entries(CUR).map(([k, [name]]) => el('button', { textContent: name, ariaPressed: String(k === cur),
-    onclick: () => { if (k === cur) return; cur = k; picked = null; shown = 0; render(); } })));
+    onclick: () => {
+      const order = Object.keys(CUR);
+      if (k !== cur) slide(order.indexOf(k) > order.indexOf(cur) ? 1 : -1, () => { cur = k; picked = null; shown = 0; });
+    } })));
 const categoryOptions = (type) => data.categories.filter((c) => c.type === type).map((c) => [c.id, c.name, c.icon, c.color]);
 
 // Los cambios se hacen sobre una copia, se validan y solo entonces reemplazan lo guardado.
@@ -48,15 +51,25 @@ function moveForm(x) {
   if (!x && !first) { toast(`Primero crea una cuenta en ${CUR[cur][0].toLowerCase()}.`); accountForm(); return; }
   const cross = (v) => v.type === 'transfer' && Boolean(v.to) && curOf(v.to) !== curOf(v.account);
   const linked = x?.debt; // un abono mantiene su tipo y categoría
+  const home = x ? curOf(x.account) : cur;
+  // Si no hay una cuenta del tipo elegido, se ofrece crearla al guardar.
+  const payOptions = (v) => {
+    if (v.type === 'transfer') return accountOptions();
+    const found = data.accounts.filter((a) => a.currency === home && a.kind === v.method).map((a) => [a.id, a.name]);
+    return found.length ? found : [[`new:${v.method}`, `${KIND[v.method][0]} (se crea al guardar)`]];
+  };
   const isType = (...t) => (v) => t.includes(v.type);
   openForm({
     title: x ? 'Editar movimiento' : 'Nuevo movimiento',
-    values: x ? { ...x, amount: asInput(x.amount), received: asInput(x.received) } : { type: 'out', account: first.id, date: L.today() },
+    values: x ? { ...x, method: account(x.account).kind, amount: asInput(x.amount), received: asInput(x.received) }
+      : { type: 'out', method: first.kind, account: first.id, date: L.today() },
     fields: [
       { key: 'type', label: 'Tipo', type: 'seg', options: [['out', 'Gasto'], ['in', 'Entrada'], ['transfer', 'Transferir']], show: () => !linked },
-      { key: 'amount', label: (v) => `Monto (${symbol(curOf(v.account))})`, type: 'money' },
+      { key: 'amount', label: (v) => `Monto (${symbol(curOf(v.account) || home)})`, type: 'money' },
       { key: 'category', label: 'Categoría', type: 'chips', options: (v) => categoryOptions(v.type === 'in' ? 'in' : 'out'), show: (v) => !linked && isType('in', 'out')(v) },
-      { key: 'account', label: 'Cuenta', type: 'select', options: () => accountOptions(linked && curOf(x.account)) },
+      { key: 'method', label: (v) => v.type === 'in' ? 'Cómo lo recibiste' : 'Con qué pagaste', type: 'seg', titled: true,
+        options: Object.entries(KIND).map(([k, kind]) => [k, kind[0]]), show: isType('in', 'out') },
+      { key: 'account', label: 'Cuenta', type: 'select', options: payOptions },
       { key: 'to', label: 'Hacia la cuenta', type: 'select', options: (v) => accountOptions().filter(([id]) => id !== v.account), show: isType('transfer') },
       { key: 'received', label: (v) => `Cuánto llega (${symbol(curOf(v.to) || cur)})`, type: 'money', show: cross },
       { key: 'note', label: 'Nota', type: 'text', placeholder: 'Opcional' },
@@ -69,6 +82,9 @@ function moveForm(x) {
       if (v.type === 'transfer' && !v.to) return 'Para transferir necesitas dos cuentas. Crea otra en Ajustes.';
       const received = cross(v) ? L.parseAmount(v.received) : null;
       if (cross(v) && !received) return 'Escribe cuánto llega a la otra cuenta.';
+      const kind = v.account.startsWith('new:') ? v.account.slice(4) : null;
+      const created = kind && { id: uid(), name: KIND[kind][0], kind, initial: 0, currency: home };
+      if (created) v.account = created.id;
       const item = {
         id: x?.id || uid(), type: v.type, amount, account: v.account, note: v.note.trim(), date: v.date,
         category: linked ? x.category : v.type === 'transfer' ? '' : v.category,
@@ -76,8 +92,8 @@ function moveForm(x) {
       };
       // Pasa al apartado donde quedó anotado, para que se vea.
       const before = cur;
-      cur = curOf(item.account);
-      return update((d) => upsert(d.movements, item), 'Guardado').then((problem) => { if (problem) cur = before; return problem; });
+      cur = created ? home : curOf(item.account);
+      return update((d) => { if (created) d.accounts.push(created); upsert(d.movements, item); }, 'Guardado').then((problem) => { if (problem) cur = before; return problem; });
     },
     onDelete: x && (() => update((d) => { d.movements = d.movements.filter((m) => m.id !== x.id); }, 'Borrado')),
   });
@@ -208,6 +224,8 @@ screens.reports = (view) => {
       el('div', {}, 'Entró', el('b', { textContent: money(s.income) })),
       el('div', {}, 'Salió', el('b', { textContent: money(s.expense) }))),
       el('p', { className: 'dim', textContent: `Te quedó ${money(s.income - s.expense)} este mes` })),
+    ...(s.expense ? [section('Con qué pagaste'), el('div', { className: 'card' }, ...L.spentByKind(here, month).map(([k, v]) =>
+      el('div', {}, line({ lead: badge(KIND[k][1], KIND[k][2]), title: KIND[k][0], sub: `${Math.round(v * 100 / s.expense)}% de tus gastos`, value: money(v) }), track(v / s.expense, KIND[k][2]))))] : []),
     section('Gastos por categoría'),
     el('div', { className: 'card' }, ...(s.expense ? [donut(s), ...s.byCategory.map(([id, v]) => {
       const c = category(id);
@@ -262,7 +280,7 @@ function categoryForm(c) {
     ],
     onSave: (v) => {
       if (!v.name.trim()) return 'Ponle un nombre.';
-      return update((d) => upsert(d.categories, { id: c?.id || uid(), name: v.name.trim(), type: v.type, icon: v.icon, color: v.color, budget: c?.budget || 0, budgetUsd: c?.budgetUsd || 0 }), 'Categoría guardada');
+      return update((d) => upsert(d.categories, { id: c?.id || uid(), name: v.name.trim(), type: v.type, icon: v.icon, color: v.color, ...Object.fromEntries(Object.values(L.BUDGET).map((k) => [k, c?.[k] || 0])) }), 'Categoría guardada');
     },
     onDelete: c && !L.FIXED.includes(c.id) ? () => update((d) => L.removeCategory(d, c.id), 'Borrada. Sus movimientos pasaron a la categoría general.') : null,
   });
@@ -314,22 +332,46 @@ function render(still = false) {
   if (!ready) return;
   const view = $('view'), top = view.scrollTop;
   view.classList.toggle('still', still);
+  view.classList.remove('sliding');
   view.replaceChildren();
   screens[tab](view);
   view.scrollTop = still ? top : 0;
   for (const b of document.querySelectorAll('[data-tab]')) b.ariaCurrent = b.dataset.tab === tab ? 'page' : 'false';
 }
 
+// Pasa de un apartado a otro: dir 1 = el nuevo está a la derecha, -1 = a la izquierda.
+function slide(dir, change) {
+  const view = $('view');
+  for (const g of document.querySelectorAll('.ghost')) g.remove();
+  for (const a of view.getAnimations()) a.cancel();
+  const box = view.getBoundingClientRect(), top = view.scrollTop;
+  const ghost = view.cloneNode(true); // copia de la pantalla que sale
+  ghost.removeAttribute('id');
+  ghost.className = 'still ghost';
+  ghost.inert = true;
+  ghost.style.cssText = `top:${box.top}px;left:${box.left}px;width:${box.width}px;height:${box.height}px`;
+  change();
+  render();
+  view.scrollTop = 0;
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  view.classList.add('sliding');
+  document.body.append(ghost);
+  ghost.scrollTop = top;
+  const timing = { duration: 340, easing: 'cubic-bezier(.25,.8,.25,1)' };
+  view.animate([{ transform: `translateX(${dir * 100}%)` }, { transform: 'none' }], timing);
+  ghost.animate([{ transform: 'none' }, { transform: `translateX(${-dir * 100}%)` }], { ...timing, fill: 'forwards' })
+    .finished.then(() => ghost.remove(), () => {});
+}
+
 function go(next) {
   if (next === tab) return;
   const order = [...document.querySelectorAll('[data-tab]')].map((b) => b.dataset.tab).concat('settings');
-  const dir = order.indexOf(next) > order.indexOf(tab) ? 1 : -1;
-  tab = next;
-  picked = null;
-  if (next === 'reports') { month = L.today().slice(0, 7); chartEnd = null; }
-  shown = 0;
-  render();
-  $('view').animate([{ opacity: 0, transform: `translateX(${dir * 36}px)` }, { opacity: 1, transform: 'none' }], { duration: 320, easing: 'cubic-bezier(.2,.8,.2,1)' });
+  slide(order.indexOf(next) > order.indexOf(tab) ? 1 : -1, () => {
+    tab = next;
+    picked = null;
+    if (next === 'reports') { month = L.today().slice(0, 7); chartEnd = null; }
+    shown = 0;
+  });
 }
 
 $('add').onclick = () => moveForm();

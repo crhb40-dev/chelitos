@@ -7,7 +7,7 @@
   const FIXED = ['otro', 'ingreso', 'deudas', 'cobros'];
 
   function defaultData() {
-    const cat = (id, name, type, icon, color) => ({ id, name, type, icon, color, budget: 0, budgetUsd: 0 });
+    const cat = (id, name, type, icon, color) => ({ id, name, type, icon, color, budget: 0, budgetUsd: 0, budgetEur: 0 });
     return {
       app: 'dinero', version: 2,
       accounts: [{ id: 'cash', name: 'Efectivo', kind: 'cash', initial: 0, currency: 'peso' }],
@@ -61,13 +61,15 @@
   const isText = (s) => typeof s === 'string';
   const KINDS = ['cash', 'bank', 'card'];
 
-  const CURRENCIES = ['peso', 'usd'];
+  // Cada moneda guarda su límite mensual en un campo propio de la categoría.
+  const BUDGET = { peso: 'budget', usd: 'budgetUsd', eur: 'budgetEur' };
+  const CURRENCIES = Object.keys(BUDGET);
   const curOf = (d, id) => d.accounts.find((a) => a.id === id)?.currency;
 
-  // Datos guardados antes de tener dólares: todo era en pesos.
+  // Datos guardados antes de tener otras monedas: todo era en pesos.
   function fill(d) {
     for (const k of ['accounts', 'goals', 'debts']) for (const x of d[k] || []) if (x) x.currency ??= 'peso';
-    for (const c of d.categories || []) if (c) c.budgetUsd ??= 0;
+    for (const c of d.categories || []) if (c) for (const k of Object.values(BUDGET)) c[k] ??= 0;
     return d;
   }
 
@@ -86,7 +88,7 @@
       d.accounts.every((a) => isText(a.name) && KINDS.includes(a.kind) && isCents(a.initial, -MAX) && money(a)) &&
       d.goals.every(money) && d.debts.every(money) &&
       d.categories.every((c) => isText(c.name) && (c.type === 'in' || c.type === 'out') && isText(c.icon) &&
-        /^#[0-9a-fA-F]{6}$/.test(c.color) && isCents(c.budget, 0) && isCents(c.budgetUsd, 0)) &&
+        /^#[0-9a-fA-F]{6}$/.test(c.color) && Object.values(BUDGET).every((k) => isCents(c[k], 0))) &&
       d.movements.every((x) => isDate(x.date) && isText(x.note) &&
         (x.debt === undefined || debts.get(x.debt)?.currency === curOf(d, x.account)) &&
         (x.type === 'transfer' ? transfer(x) : entry(x))) &&
@@ -142,7 +144,7 @@
       recurring: d.recurring.filter((x) => mine(x.account)),
       goals: d.goals.filter((x) => x.currency === currency),
       debts: d.debts.filter((x) => x.currency === currency),
-      categories: d.categories.map((c) => ({ ...c, budget: currency === 'usd' ? c.budgetUsd : c.budget })),
+      categories: d.categories.map((c) => ({ ...c, budget: c[BUDGET[currency]] })),
     };
   }
 
@@ -169,6 +171,15 @@
     const { income, expense } = summary(d, month);
     return { month, income, expense };
   });
+
+  // Gastos del mes según el tipo de cuenta (efectivo, tarjeta, banco).
+  function spentByKind(d, month) {
+    const kinds = new Map(d.accounts.map((a) => [a.id, a.kind])), total = {};
+    for (const x of summary(d, month).items) {
+      if (x.type === 'out') total[kinds.get(x.account)] = (total[kinds.get(x.account)] || 0) + x.amount;
+    }
+    return Object.entries(total).sort((a, b) => b[1] - a[1]);
+  }
 
   const plain = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   function search(d, { text = '', category = '', account = '', from = '', to = '' } = {}) {
@@ -216,7 +227,7 @@
 
   const api = {
     COLORS, FIXED, defaultData, parseAmount, today, shiftMonth, nextDate, load, balances, summary,
-    view, curOf, windowEnd, lastMonths, search, budgets, debtPaid, payRecurring, removeCategory, removeAccount,
+    BUDGET, view, curOf, spentByKind, windowEnd, lastMonths, search, budgets, debtPaid, payRecurring, removeCategory, removeAccount,
   };
   if (typeof module !== 'undefined') module.exports = api;
   else root.Logic = api;

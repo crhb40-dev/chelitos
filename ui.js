@@ -17,7 +17,7 @@ function el(tag, props = {}, ...kids) {
 }
 
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-const CUR = { peso: ['Pesos', '$'], usd: ['Dólares', 'US$'] };
+const CUR = { peso: ['Pesos', '$'], usd: ['Dólares', 'US$'], eur: ['Euros', '€'] };
 let cur = 'peso'; // apartado que se está viendo
 const symbol = (k = cur) => CUR[k][1];
 const money = (c, k = cur) => (c < 0 ? '−' : '') + symbol(k) + (Math.abs(c) / 100).toLocaleString('en-US', { minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 });
