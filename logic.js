@@ -1,0 +1,223 @@
+(function (root) {
+  const MAX = 99999999999; // centavos
+  const GRAY = '#8B8F99';
+  // Paleta validada para fondo oscuro (separable con daltonismo, junto a etiquetas).
+  const COLORS = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767', GRAY];
+  // Categorías que el sistema necesita; no se borran.
+  const FIXED = ['otro', 'ingreso', 'deudas', 'cobros'];
+
+  function defaultData() {
+    const cat = (id, name, type, icon, color) => ({ id, name, type, icon, color, budget: 0, budgetUsd: 0 });
+    return {
+      app: 'dinero', version: 2,
+      accounts: [{ id: 'cash', name: 'Efectivo', kind: 'cash', initial: 0, currency: 'peso' }],
+      categories: [
+        cat('casa', 'Casa', 'out', 'home', COLORS[0]), cat('comida', 'Comida', 'out', 'food', COLORS[1]),
+        cat('transporte', 'Transporte', 'out', 'car', COLORS[2]), cat('servicios', 'Servicios', 'out', 'bolt', COLORS[3]),
+        cat('ropa', 'Ropa', 'out', 'shirt', COLORS[4]), cat('salud', 'Salud', 'out', 'heart', COLORS[7]),
+        cat('ocio', 'Diversión', 'out', 'game', COLORS[6]), cat('deudas', 'Deudas', 'out', 'card', COLORS[5]),
+        cat('otro', 'Otro', 'out', 'dots', GRAY),
+        cat('ingreso', 'Ingreso', 'in', 'cash', COLORS[5]), cat('sueldo', 'Sueldo', 'in', 'work', COLORS[0]),
+        cat('venta', 'Venta', 'in', 'cart', COLORS[3]), cat('cobros', 'Cobros', 'in', 'card', COLORS[2]),
+      ],
+      movements: [], goals: [], recurring: [], debts: [],
+    };
+  }
+
+  function parseAmount(str, { zero = false, negative = false } = {}) {
+    let s = String(str).replace(/[$\s]/g, '');
+    const sign = negative && s.startsWith('-') ? -1 : 1;
+    if (sign < 0) s = s.slice(1);
+    // coma = miles, punto = decimales; "12,50" se rechaza para no leerlo como 1250
+    if (!/^(\d+|\d{1,3}(,\d{3})+)(\.\d{1,2})?$/.test(s)) return null;
+    const cents = Math.round(Number(s.replace(/,/g, '')) * 100);
+    return cents <= MAX && (cents > 0 || (zero && cents === 0)) ? sign * cents || 0 : null;
+  }
+
+  const pad = (n) => String(n).padStart(2, '0');
+  const today = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const parts = (s) => s.split('-').map(Number);
+  function shiftMonth(month, n) {
+    const [y, m] = parts(month);
+    return today(new Date(y, m - 1 + n, 1)).slice(0, 7);
+  }
+  const monthDays = (month) => { const [y, m] = parts(month); return new Date(y, m, 0).getDate(); };
+
+  // freq: 'week' | 'half' (días 15 y último) | 'month' (mismo día, o el último si no existe)
+  function nextDate(date, freq, day) {
+    const [y, m, d] = parts(date);
+    if (freq === 'week') return today(new Date(y, m - 1, d + 7));
+    const month = date.slice(0, 7), last = monthDays(month);
+    if (freq === 'half') {
+      if (d < 15) return `${month}-15`;
+      return d < last ? `${month}-${last}` : `${shiftMonth(month, 1)}-15`;
+    }
+    const next = shiftMonth(month, 1);
+    return `${next}-${pad(Math.min(day || d, monthDays(next)))}`;
+  }
+
+  const isDate = (s) => typeof s === 'string' && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(s);
+  const isCents = (n, min = 1) => Number.isInteger(n) && n >= min && n <= MAX;
+  const isText = (s) => typeof s === 'string';
+  const KINDS = ['cash', 'bank', 'card'];
+
+  const CURRENCIES = ['peso', 'usd'];
+  const curOf = (d, id) => d.accounts.find((a) => a.id === id)?.currency;
+
+  // Datos guardados antes de tener dólares: todo era en pesos.
+  function fill(d) {
+    for (const k of ['accounts', 'goals', 'debts']) for (const x of d[k] || []) if (x) x.currency ??= 'peso';
+    for (const c of d.categories || []) if (c) c.budgetUsd ??= 0;
+    return d;
+  }
+
+  function check(d) {
+    const lists = ['accounts', 'categories', 'movements', 'goals', 'recurring', 'debts'];
+    if (d.app !== 'dinero' || d.version !== 2 || !lists.every((k) => Array.isArray(d[k]) &&
+      d[k].every((x) => x && isText(x.id)) && new Set(d[k].map((x) => x.id)).size === d[k].length)) return false;
+    const acc = new Set(d.accounts.map((a) => a.id));
+    const cats = new Map(d.categories.map((c) => [c.id, c]));
+    const debts = new Map(d.debts.map((x) => [x.id, x]));
+    const money = (x) => CURRENCIES.includes(x.currency);
+    const transfer = (x) => isCents(x.amount) && acc.has(x.account) && acc.has(x.to) && x.to !== x.account &&
+      (curOf(d, x.account) === curOf(d, x.to) ? x.received === undefined : isCents(x.received));
+    const entry = (x) => isCents(x.amount) && acc.has(x.account) && cats.get(x.category)?.type === x.type;
+    return d.accounts.length > 0 && FIXED.every((id) => cats.has(id)) &&
+      d.accounts.every((a) => isText(a.name) && KINDS.includes(a.kind) && isCents(a.initial, -MAX) && money(a)) &&
+      d.goals.every(money) && d.debts.every(money) &&
+      d.categories.every((c) => isText(c.name) && (c.type === 'in' || c.type === 'out') && isText(c.icon) &&
+        /^#[0-9a-fA-F]{6}$/.test(c.color) && isCents(c.budget, 0) && isCents(c.budgetUsd, 0)) &&
+      d.movements.every((x) => isDate(x.date) && isText(x.note) &&
+        (x.debt === undefined || debts.get(x.debt)?.currency === curOf(d, x.account)) &&
+        (x.type === 'transfer' ? transfer(x) : entry(x))) &&
+      d.goals.every((g) => isText(g.name) && isCents(g.target) && isCents(g.saved, 0)) &&
+      d.recurring.every((r) => isText(r.name) && entry(r) && ['week', 'half', 'month'].includes(r.freq) &&
+        Number.isInteger(r.day) && isDate(r.next)) &&
+      d.debts.every((x) => isText(x.name) && (x.dir === 'owe' || x.dir === 'owed') && isCents(x.total) && isCents(x.paid, 0));
+  }
+
+  function migrate(v1) {
+    const d = defaultData();
+    const known = { Casa: 'casa', Comida: 'comida', Transporte: 'transporte' };
+    d.movements = v1.movements.map((x) => ({
+      id: x.id, type: x.type, amount: x.amount, account: 'cash',
+      category: x.type === 'in' ? 'ingreso' : known[x.category] || 'otro', note: x.note, date: x.date,
+    }));
+    return d;
+  }
+
+  // Lee datos guardados o una copia (versión 1 o 2). Lanza error si no son válidos.
+  function load(text) {
+    let d;
+    try {
+      d = JSON.parse(text);
+      if (d && d.app === 'dinero' && d.version === undefined && Array.isArray(d.movements)) d = migrate(d);
+      if (!d || !check(fill(d))) throw new Error();
+    } catch {
+      throw new Error('Esos datos no son de esta app o están dañados.');
+    }
+    return d;
+  }
+
+  const newest = (a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id);
+
+  // total = suma de las cuentas de esa moneda; nunca se mezclan.
+  function balances(d, currency = 'peso') {
+    const byAccount = Object.fromEntries(d.accounts.map((a) => [a.id, a.initial]));
+    for (const x of d.movements) {
+      byAccount[x.account] += x.type === 'in' ? x.amount : -x.amount;
+      if (x.type === 'transfer') byAccount[x.to] += x.received ?? x.amount;
+    }
+    const total = d.accounts.reduce((sum, a) => sum + (a.currency === currency ? byAccount[a.id] : 0), 0);
+    return { byAccount, total };
+  }
+
+  // Lo que pertenece a una moneda. Un cambio de moneda aparece en las dos.
+  function view(d, currency) {
+    const mine = (id) => curOf(d, id) === currency;
+    return {
+      ...d,
+      accounts: d.accounts.filter((a) => a.currency === currency),
+      movements: d.movements.filter((x) => mine(x.account) || (x.type === 'transfer' && mine(x.to))),
+      recurring: d.recurring.filter((x) => mine(x.account)),
+      goals: d.goals.filter((x) => x.currency === currency),
+      debts: d.debts.filter((x) => x.currency === currency),
+      categories: d.categories.map((c) => ({ ...c, budget: currency === 'usd' ? c.budgetUsd : c.budget })),
+    };
+  }
+
+  function summary(d, month) {
+    const items = d.movements.filter((x) => x.date.startsWith(month)).sort(newest);
+    let income = 0, expense = 0;
+    const cats = {};
+    for (const x of items) {
+      if (x.type === 'in') income += x.amount;
+      else if (x.type === 'out') { expense += x.amount; cats[x.category] = (cats[x.category] || 0) + x.amount; }
+    }
+    const byCategory = Object.entries(cats).sort((a, b) => b[1] - a[1]);
+    return { income, expense, byCategory, items };
+  }
+
+  // Último mes que muestra un gráfico de n meses: solo cambia si el elegido queda fuera.
+  function windowEnd(end, month, n) {
+    if (!end || month > end) return month;
+    return month < shiftMonth(end, 1 - n) ? shiftMonth(month, n - 1) : end;
+  }
+
+  const lastMonths = (d, end, n) => Array.from({ length: n }, (_, i) => {
+    const month = shiftMonth(end, i - n + 1);
+    const { income, expense } = summary(d, month);
+    return { month, income, expense };
+  });
+
+  const plain = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  function search(d, { text = '', category = '', account = '', from = '', to = '' } = {}) {
+    const names = new Map(d.categories.map((c) => [c.id, c.name]));
+    const q = plain(text.trim());
+    return d.movements.filter((x) =>
+      (!q || plain(`${x.note} ${names.get(x.category) || 'transferencia'}`).includes(q)) &&
+      (!category || x.category === category) && (!account || x.account === account || x.to === account) &&
+      (!from || x.date >= from) && (!to || x.date <= to)).sort(newest);
+  }
+
+  function budgets(d, month) {
+    const spent = Object.fromEntries(summary(d, month).byCategory);
+    return d.categories.filter((c) => c.type === 'out' && c.budget > 0).map((c) => {
+      const used = spent[c.id] || 0, ratio = used / c.budget;
+      return { id: c.id, spent: used, limit: c.budget, ratio, level: ratio > 1 ? 'over' : ratio >= 0.8 ? 'warn' : 'ok' };
+    }).sort((a, b) => b.ratio - a.ratio);
+  }
+
+  const debtPaid = (d, debt) => d.movements.reduce((sum, x) => sum + (x.debt === debt.id ? x.amount : 0), debt.paid);
+
+  function payRecurring(d, id, now, newId) {
+    const r = d.recurring.find((x) => x.id === id);
+    d.movements.push({
+      id: newId, type: r.type, amount: r.amount, account: r.account, category: r.category,
+      note: r.name, date: r.next < now ? r.next : now,
+    });
+    r.next = nextDate(r.next, r.freq, r.day);
+  }
+
+  function removeCategory(d, id) {
+    if (FIXED.includes(id)) throw new Error('Esa categoría no se puede borrar.');
+    const other = d.categories.find((c) => c.id === id).type === 'in' ? 'ingreso' : 'otro';
+    for (const x of [...d.movements, ...d.recurring]) if (x.category === id) x.category = other;
+    d.categories = d.categories.filter((c) => c.id !== id);
+  }
+
+  function removeAccount(d, id) {
+    if (d.accounts.length === 1) throw new Error('Necesitas al menos una cuenta.');
+    if ([...d.movements, ...d.recurring].some((x) => x.account === id || x.to === id)) {
+      throw new Error('Esa cuenta tiene movimientos o pagos fijos. Cámbialos o bórralos primero.');
+    }
+    d.accounts = d.accounts.filter((a) => a.id !== id);
+  }
+
+  const api = {
+    COLORS, FIXED, defaultData, parseAmount, today, shiftMonth, nextDate, load, balances, summary,
+    view, curOf, windowEnd, lastMonths, search, budgets, debtPaid, payRecurring, removeCategory, removeAccount,
+  };
+  if (typeof module !== 'undefined') module.exports = api;
+  else root.Logic = api;
+})(this);

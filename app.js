@@ -1,0 +1,367 @@
+// Estado, guardado y pantallas principales.
+const KEY = 'data', OLD_KEY = 'movements';
+let data = L.defaultData();
+let tab = 'home', month = L.today().slice(0, 7), picked = null, ready = false, chartEnd = null;
+const filters = { text: '', category: '', account: '', from: '', to: '' };
+const screens = {};           // nombre -> función(view)
+const homeSections = [];      // bloques extra del inicio
+const settingsSections = [];  // bloques extra de ajustes
+
+const account = (id) => data.accounts.find((a) => a.id === id);
+const category = (id) => data.categories.find((c) => c.id === id);
+const KIND = { cash: ['Efectivo', 'cash', L.COLORS[2]], bank: ['Banco', 'bank', L.COLORS[0]], card: ['Tarjeta', 'card', L.COLORS[6]] };
+const mine = () => L.view(data, cur);
+const curOf = (id) => L.curOf(data, id);
+// Sin moneda: todas las cuentas, indicando cuáles son en dólares.
+const accountOptions = (k) => data.accounts.filter((a) => !k || a.currency === k)
+  .map((a) => [a.id, !k && a.currency === 'usd' ? `${a.name} (US$)` : a.name]);
+const curSwitch = () => el('div', { className: 'seg cur', role: 'group', ariaLabel: 'Moneda' },
+  ...Object.entries(CUR).map(([k, [name]]) => el('button', { textContent: name, ariaPressed: String(k === cur),
+    onclick: () => { if (k === cur) return; cur = k; picked = null; shown = 0; render(); } })));
+const categoryOptions = (type) => data.categories.filter((c) => c.type === type).map((c) => [c.id, c.name, c.icon, c.color]);
+
+// Los cambios se hacen sobre una copia, se validan y solo entonces reemplazan lo guardado.
+async function update(change, done) {
+  let next;
+  try {
+    next = structuredClone(data);
+    change(next);
+    next = L.load(JSON.stringify(next));
+    await store.set(KEY, JSON.stringify(next));
+  } catch (e) {
+    console.error(e);
+    return 'No se pudo guardar. Revisa los datos.';
+  }
+  data = next;
+  render(true);
+  if (done) toast(done);
+}
+
+const upsert = (list, item) => {
+  const i = list.findIndex((x) => x.id === item.id);
+  if (i < 0) list.push(item); else list[i] = item;
+};
+
+/* ---------- Movimientos ---------- */
+function moveForm(x) {
+  const first = data.accounts.find((a) => a.currency === cur);
+  if (!x && !first) { toast(`Primero crea una cuenta en ${CUR[cur][0].toLowerCase()}.`); accountForm(); return; }
+  const cross = (v) => v.type === 'transfer' && Boolean(v.to) && curOf(v.to) !== curOf(v.account);
+  const linked = x?.debt; // un abono mantiene su tipo y categoría
+  const isType = (...t) => (v) => t.includes(v.type);
+  openForm({
+    title: x ? 'Editar movimiento' : 'Nuevo movimiento',
+    values: x ? { ...x, amount: asInput(x.amount), received: asInput(x.received) } : { type: 'out', account: first.id, date: L.today() },
+    fields: [
+      { key: 'type', label: 'Tipo', type: 'seg', options: [['out', 'Gasto'], ['in', 'Entrada'], ['transfer', 'Transferir']], show: () => !linked },
+      { key: 'amount', label: (v) => `Monto (${symbol(curOf(v.account))})`, type: 'money' },
+      { key: 'category', label: 'Categoría', type: 'chips', options: (v) => categoryOptions(v.type === 'in' ? 'in' : 'out'), show: (v) => !linked && isType('in', 'out')(v) },
+      { key: 'account', label: 'Cuenta', type: 'select', options: () => accountOptions(linked && curOf(x.account)) },
+      { key: 'to', label: 'Hacia la cuenta', type: 'select', options: (v) => accountOptions().filter(([id]) => id !== v.account), show: isType('transfer') },
+      { key: 'received', label: (v) => `Cuánto llega (${symbol(curOf(v.to) || cur)})`, type: 'money', show: cross },
+      { key: 'note', label: 'Nota', type: 'text', placeholder: 'Opcional' },
+      { key: 'date', label: 'Fecha', type: 'date' },
+    ],
+    onSave: (v) => {
+      const amount = L.parseAmount(v.amount);
+      if (!amount) return 'Escribe un monto mayor que 0. Usa punto para los centavos.';
+      if (!v.date) return 'Elige una fecha.';
+      if (v.type === 'transfer' && !v.to) return 'Para transferir necesitas dos cuentas. Crea otra en Ajustes.';
+      const received = cross(v) ? L.parseAmount(v.received) : null;
+      if (cross(v) && !received) return 'Escribe cuánto llega a la otra cuenta.';
+      const item = {
+        id: x?.id || uid(), type: v.type, amount, account: v.account, note: v.note.trim(), date: v.date,
+        category: linked ? x.category : v.type === 'transfer' ? '' : v.category,
+        ...(v.type === 'transfer' && { to: v.to }), ...(received && { received }), ...(linked && { debt: x.debt }),
+      };
+      // Pasa al apartado donde quedó anotado, para que se vea.
+      const before = cur;
+      cur = curOf(item.account);
+      return update((d) => upsert(d.movements, item), 'Guardado').then((problem) => { if (problem) cur = before; return problem; });
+    },
+    onDelete: x && (() => update((d) => { d.movements = d.movements.filter((m) => m.id !== x.id); }, 'Borrado')),
+  });
+}
+
+function moveRow(x) {
+  const transfer = x.type === 'transfer';
+  const c = transfer ? { name: 'Transferencia', icon: 'swap', color: '#8B8F99' } : category(x.category);
+  const where = transfer ? `${account(x.account).name} → ${account(x.to).name}` : account(x.account).name;
+  // En un cambio de moneda se muestra lo que salió o llegó en el apartado actual.
+  const arrived = transfer && curOf(x.to) === cur && curOf(x.account) !== cur;
+  const amount = arrived ? x.received : x.amount;
+  const other = x.received ? ` · ${money(x.amount, curOf(x.account))} → ${money(x.received, curOf(x.to))}` : '';
+  return line({
+    lead: badge(c.icon, c.color), title: x.note || c.name, sub: `${dayName(x.date)} · ${where}${other}`,
+    value: (x.type === 'in' || arrived ? '+' : x.type === 'out' || x.received ? '−' : '') + money(amount),
+    valueClass: x.type === 'in' ? 'pos' : '', onclick: () => moveForm(x),
+  });
+}
+
+/* ---------- Inicio ---------- */
+screens.home = (view) => {
+  const here = mine(), now = L.today().slice(0, 7), s = L.summary(here, now), b = L.balances(data, cur);
+  const big = el('div', { className: 'big' + (b.total < 0 ? ' neg' : '') });
+  view.append(
+    el('div', { className: 'head' }, el('h1', { textContent: 'Mi dinero' }),
+      el('button', { className: 'icon-btn', ariaLabel: 'Ajustes', onclick: () => go('settings') }, icon('gear'))),
+    curSwitch(),
+    el('div', { className: 'card hero' }, el('div', { className: 'dim', textContent: `Saldo total en ${CUR[cur][0].toLowerCase()}` }), big,
+      el('div', { className: 'dim', textContent: monthName(now) }),
+      el('div', { className: 'duo' },
+        el('div', {}, '▲ Entró', el('b', { className: 'pos', textContent: money(s.income) })),
+        el('div', {}, '▼ Salió', el('b', { className: 'neg', textContent: money(s.expense) })))),
+    section('Cuentas', '+ Cuenta', () => accountForm()),
+    el('div', { className: 'scroll' }, ...(here.accounts.length ? [] : [button(`Crear cuenta en ${CUR[cur][0].toLowerCase()}`, () => accountForm())]), ...here.accounts.map((a) => el('button', { className: 'tile', onclick: () => accountForm(a) },
+      badge(KIND[a.kind][1], KIND[a.kind][2]), el('span', { className: 'dim', textContent: a.name }),
+      el('b', { className: b.byAccount[a.id] < 0 ? 'neg' : '', textContent: money(b.byAccount[a.id]) })))));
+  countUp(big, b.total);
+
+  if (s.expense) {
+    view.append(section('En qué gastas', 'Ver reportes', () => go('reports')),
+      el('div', { className: 'card' }, ...s.byCategory.slice(0, 3).map(([id, v]) => {
+        const c = category(id);
+        return el('div', {}, line({ lead: badge(c.icon, c.color), title: c.name, sub: `${Math.round(v * 100 / s.expense)}% de tus gastos`, value: money(v) }), track(v / s.expense, c.color));
+      })));
+  }
+  for (const add of homeSections) add(view);
+  const recent = L.search(here).slice(0, 5);
+  view.append(section('Últimos movimientos', recent.length ? 'Ver todos' : '', () => go('moves')),
+    el('div', {}, ...(recent.length ? recent.map(moveRow) : [empty('Aún no hay movimientos. Toca + para anotar el primero.')])));
+};
+
+/* ---------- Buscar ---------- */
+screens.moves = (view) => {
+  const results = el('div');
+  let limit = 60;
+  const refresh = () => {
+    const found = L.search(mine(), filters);
+    const net = found.reduce((n, x) => n + (x.type === 'in' ? x.amount : x.type === 'out' ? -x.amount : 0), 0); // sin transferencias
+    results.replaceChildren(
+      el('p', { className: 'dim', textContent: `${found.length} ${found.length === 1 ? 'movimiento' : 'movimientos'} · balance ${money(net)}` }),
+      ...(found.length ? found.slice(0, limit).map(moveRow) : [empty('Nada coincide con la búsqueda.')]),
+      ...(found.length > limit ? [button('Ver más', () => { limit += 100; refresh(); })] : []));
+  };
+  const input = (key, type, label) => el('input', { type, value: filters[key], ariaLabel: label, placeholder: label, oninput: (e) => { filters[key] = e.target.value; refresh(); } });
+  const select = (key, label, options) => {
+    const s = el('select', { ariaLabel: label, onchange: () => { filters[key] = s.value; refresh(); } },
+      el('option', { value: '', textContent: label }), ...options.map(([value, textContent]) => el('option', { value, textContent })));
+    s.value = filters[key];
+    if (s.value !== filters[key]) filters[key] = s.value = '';
+    return s;
+  };
+  view.append(el('div', { className: 'head' }, el('h1', { textContent: 'Historial' })), curSwitch(),
+    input('text', 'search', 'Buscar por nota o categoría'),
+    el('div', { className: 'filters' },
+      select('category', 'Categorías', data.categories.map((c) => [c.id, c.name])),
+      select('account', 'Cuentas', accountOptions(cur)),
+      el('label', { className: 'field' }, 'Desde', input('from', 'date', 'Desde')),
+      el('label', { className: 'field' }, 'Hasta', input('to', 'date', 'Hasta'))),
+    button('Limpiar búsqueda', () => { for (const k in filters) filters[k] = ''; render(true); }),
+    results);
+  refresh();
+};
+
+/* ---------- Reportes ---------- */
+function donut(s) {
+  // Como mucho 6 porciones; lo demás se agrupa.
+  const slices = s.byCategory.map(([id, v]) => ({ id, v, ...category(id) }));
+  if (slices.length > 6) {
+    const rest = slices.splice(5);
+    slices.push({ id: 'rest', name: 'Resto', color: '#8B8F99', v: rest.reduce((n, x) => n + x.v, 0) });
+  }
+  const R = 80, C = 2 * Math.PI * R;
+  const chosen = slices.find((x) => x.id === picked);
+  const svg = svgEl('svg', { viewBox: '0 0 200 200', width: 200, height: 200, role: 'img', 'aria-label': 'Gastos por categoría' });
+  let at = 0;
+  for (const x of slices) {
+    const len = x.v / s.expense * C;
+    const arc = svgEl('circle', { cx: 100, cy: 100, r: R, fill: 'none', stroke: x.color, 'stroke-width': x === chosen ? 34 : 26,
+      'stroke-dasharray': `${Math.max(1, len - (slices.length > 1 ? 2 : 0))} ${C}`, 'stroke-dashoffset': -at });
+    arc.onclick = () => { picked = picked === x.id ? null : x.id; render(true); };
+    svg.append(arc);
+    at += len;
+  }
+  return el('div', { className: 'donut' }, svg, el('div', { className: 'center' },
+    el('span', { className: 'dim', textContent: chosen ? chosen.name : 'Gastaste' }),
+    el('b', { textContent: money(chosen ? chosen.v : s.expense) }),
+    chosen ? el('span', { className: 'dim', textContent: `${Math.round(chosen.v * 100 / s.expense)}%` }) : null));
+}
+
+screens.reports = (view) => {
+  chartEnd = L.windowEnd(chartEnd, month, 6);
+  const here = mine(), s = L.summary(here, month), six = L.lastMonths(here, chartEnd, 6);
+  const top = Math.max(1, ...six.flatMap((m) => [m.income, m.expense]));
+  const go6 = (n) => { month = L.shiftMonth(month, n); picked = null; render(true); };
+  const arrow = (textContent, n, ariaLabel) => el('button', { textContent, ariaLabel, onclick: () => go6(n) });
+  const column = (m) => {
+    const bar = (v, color) => { const i = el('i'); i.style.cssText = `height:${v ? Math.max(2, v / top * 100) : 0}%;background:${color}`; return i; };
+    return el('button', { ariaPressed: String(m.month === month), ariaLabel: `${monthName(m.month)}: entró ${money(m.income)}, salió ${money(m.expense)}`,
+      onclick: () => { month = m.month; picked = null; render(true); } },
+      el('div', { className: 'pair' }, bar(m.income, 'var(--in)'), bar(m.expense, 'var(--out)')), monthShort(m.month));
+  };
+  const key = (color, text) => el('span', {}, Object.assign(el('i'), { style: `background:${color}` }), text);
+  view.append(
+    el('div', { className: 'head' }, el('h1', { textContent: 'Reportes' })), curSwitch(),
+    el('div', { className: 'month' }, arrow('‹', -1, 'Mes anterior'), el('strong', { textContent: monthName(month) }), arrow('›', 1, 'Mes siguiente')),
+    el('div', { className: 'card' }, el('div', { className: 'duo' },
+      el('div', {}, 'Entró', el('b', { textContent: money(s.income) })),
+      el('div', {}, 'Salió', el('b', { textContent: money(s.expense) }))),
+      el('p', { className: 'dim', textContent: `Te quedó ${money(s.income - s.expense)} este mes` })),
+    section('Gastos por categoría'),
+    el('div', { className: 'card' }, ...(s.expense ? [donut(s), ...s.byCategory.map(([id, v]) => {
+      const c = category(id);
+      return line({ lead: badge(c.icon, c.color), title: c.name, sub: `${Math.round(v * 100 / s.expense)}%`, value: money(v),
+        onclick: () => { Object.assign(filters, { text: '', account: '', category: id, from: `${month}-01`, to: `${month}-31` }); go('moves'); } });
+    })] : [empty('Sin gastos este mes.')])),
+    section(chartEnd === L.today().slice(0, 7) ? 'Últimos 6 meses' : 'Comparación de 6 meses'),
+    el('div', { className: 'card' }, el('div', { className: 'keys' }, key('var(--in)', 'Entró'), key('var(--out)', 'Salió')),
+      el('div', { className: 'cols' }, ...six.map(column)),
+      el('p', { className: 'dim', textContent: `Toca un mes para verlo. ${monthName(month)}: entró ${money(s.income)}, salió ${money(s.expense)}.` })));
+};
+
+/* ---------- Cuentas, categorías y copia ---------- */
+function accountForm(a) {
+  openForm({
+    title: a ? 'Editar cuenta' : 'Nueva cuenta',
+    values: a ? { ...a, initial: asInput(a.initial) } : { kind: 'bank', initial: '0', currency: cur },
+    fields: [
+      { key: 'name', label: 'Nombre', type: 'text', placeholder: 'Ej. Banco, Ahorros' },
+      { key: 'kind', label: 'Tipo', type: 'seg', titled: true, options: Object.entries(KIND).map(([k, v]) => [k, v[0]]) },
+      { key: 'currency', label: 'Moneda', type: 'seg', titled: true, options: Object.entries(CUR).map(([k, x]) => [k, x[0]]) },
+      { key: 'initial', label: 'Saldo con el que empieza (en tarjeta, deuda con signo -)', type: 'money' },
+    ],
+    onSave: (v) => {
+      const initial = L.parseAmount(v.initial, { zero: true, negative: true });
+      if (!v.name.trim()) return 'Ponle un nombre.';
+      if (initial === null) return 'Revisa el saldo. Usa punto para los centavos.';
+      if (a && v.currency !== a.currency && [...data.movements, ...data.recurring].some((x) => x.account === a.id || x.to === a.id)) {
+        return 'No se puede cambiar la moneda de una cuenta con movimientos o pagos fijos. Crea otra cuenta.';
+      }
+      const before = cur;
+      cur = v.currency;
+      return update((d) => upsert(d.accounts, { id: a?.id || uid(), name: v.name.trim(), kind: v.kind, initial, currency: v.currency }), 'Cuenta guardada')
+        .then((problem) => { if (problem) cur = before; return problem; });
+    },
+    onDelete: a && (async () => {
+      try { L.removeAccount(structuredClone(data), a.id); } catch (e) { return e.message; }
+      return update((d) => L.removeAccount(d, a.id), 'Cuenta borrada');
+    }),
+  });
+}
+
+function categoryForm(c) {
+  openForm({
+    title: c ? 'Editar categoría' : 'Nueva categoría',
+    values: c ? { ...c } : { type: 'out', icon: 'dots', color: L.COLORS[0] },
+    fields: [
+      { key: 'type', label: 'Para', type: 'seg', options: [['out', 'Gastos'], ['in', 'Entradas']], show: () => !c },
+      { key: 'name', label: 'Nombre', type: 'text' },
+      { key: 'icon', label: 'Icono', type: 'icons', options: Object.keys(ICONS).filter((k) => k !== 'gear' && k !== 'swap').map((k, i) => [k, `Icono ${i + 1}`]) },
+      { key: 'color', label: 'Color', type: 'colors', options: L.COLORS.map((x, i) => [x, `Color ${i + 1}`]) },
+    ],
+    onSave: (v) => {
+      if (!v.name.trim()) return 'Ponle un nombre.';
+      return update((d) => upsert(d.categories, { id: c?.id || uid(), name: v.name.trim(), type: v.type, icon: v.icon, color: v.color, budget: c?.budget || 0, budgetUsd: c?.budgetUsd || 0 }), 'Categoría guardada');
+    },
+    onDelete: c && !L.FIXED.includes(c.id) ? () => update((d) => L.removeCategory(d, c.id), 'Borrada. Sus movimientos pasaron a la categoría general.') : null,
+  });
+}
+
+screens.settings = (view) => {
+  view.append(el('div', { className: 'head' }, el('h1', { textContent: 'Ajustes' }), button('Listo', () => go('home'), 'link')),
+    section('Cuentas', '+ Nueva', () => accountForm()),
+    el('div', { className: 'card' }, ...data.accounts.map((a) => line({ lead: badge(KIND[a.kind][1], KIND[a.kind][2]), title: a.name, sub: `${KIND[a.kind][0]} · ${CUR[a.currency][0]}`, onclick: () => accountForm(a) }))));
+  for (const add of settingsSections) add(view);
+  view.append(section('Categorías', '+ Nueva', () => categoryForm()),
+    el('div', { className: 'card' }, ...data.categories.map((c) => line({ lead: badge(c.icon, c.color), title: c.name, sub: c.type === 'in' ? 'Entradas' : 'Gastos', onclick: () => categoryForm(c) }))),
+    section('Copia de seguridad'),
+    el('div', {}, button('Guardar copia', exportBackup), button('Recuperar copia', () => $('file').click())));
+};
+
+async function exportBackup() {
+  const name = `dinero-${L.today()}.json`, text = JSON.stringify(data);
+  if (!plugins) {
+    const file = new File([text], name, { type: 'application/json' });
+    if (navigator.canShare?.({ files: [file] })) {
+      try { await navigator.share({ files: [file] }); return; } catch (e) { if (e.name === 'AbortError') return; }
+    }
+    el('a', { href: URL.createObjectURL(file), download: name }).click();
+    return;
+  }
+  try {
+    const { uri } = await plugins.Filesystem.writeFile({ path: name, data: text, directory: 'CACHE', encoding: 'utf8' });
+    await plugins.Share.share({ title: name, files: [uri] });
+  } catch (e) {
+    if (!/cancel/i.test(e.message)) toast('No se pudo guardar la copia.');
+  }
+}
+
+$('file').onchange = async () => {
+  const file = $('file').files[0];
+  $('file').value = '';
+  if (!file) return;
+  let next;
+  try { next = L.load(await file.text()); } catch (e) { toast(e.message); return; }
+  if (!confirm(`¿Reemplazar todo lo actual (${data.movements.length} movimientos) por la copia (${next.movements.length} movimientos)?`)) return;
+  const problem = await update((d) => Object.assign(d, next), 'Copia recuperada');
+  if (problem) toast(problem);
+};
+
+/* ---------- Navegación ---------- */
+// still = redibujar sin repetir las animaciones de entrada.
+function render(still = false) {
+  if (!ready) return;
+  const view = $('view'), top = view.scrollTop;
+  view.classList.toggle('still', still);
+  view.replaceChildren();
+  screens[tab](view);
+  view.scrollTop = still ? top : 0;
+  for (const b of document.querySelectorAll('[data-tab]')) b.ariaCurrent = b.dataset.tab === tab ? 'page' : 'false';
+}
+
+function go(next) {
+  if (next === tab) return;
+  const order = [...document.querySelectorAll('[data-tab]')].map((b) => b.dataset.tab).concat('settings');
+  const dir = order.indexOf(next) > order.indexOf(tab) ? 1 : -1;
+  tab = next;
+  picked = null;
+  if (next === 'reports') { month = L.today().slice(0, 7); chartEnd = null; }
+  shown = 0;
+  render();
+  $('view').animate([{ opacity: 0, transform: `translateX(${dir * 36}px)` }, { opacity: 1, transform: 'none' }], { duration: 320, easing: 'cubic-bezier(.2,.8,.2,1)' });
+}
+
+$('add').onclick = () => moveForm();
+$('sheet').oncancel = (e) => { e.preventDefault(); closeSheet(); };
+for (const b of document.querySelectorAll('[data-tab]')) b.onclick = () => go(b.dataset.tab);
+plugins?.App.addListener('backButton', () => {
+  if (window.locked) plugins.App.exitApp();
+  else if ($('sheet').open) closeSheet();
+  else if (tab !== 'home') go('home');
+  else plugins.App.exitApp();
+});
+document.addEventListener('visibilitychange', () => { if (!document.hidden && !$('sheet').open) render(true); });
+
+async function start() {
+  try {
+    const saved = await store.get(KEY);
+    if (saved) data = L.load(saved);
+    else {
+      // Primera vez en la versión 2: pasa los datos de la 1. La clave vieja se conserva intacta.
+      const old = await store.get(OLD_KEY);
+      if (old) { data = L.load(old); await store.set(KEY, JSON.stringify(data)); }
+    }
+    await window.gate?.(); // bloquea antes de mostrar nada
+    ready = true;
+    render();
+  } catch (e) {
+    // No tocar datos ilegibles: se bloquea la app para no sobrescribirlos.
+    console.error(e);
+    $('add').disabled = true;
+    for (const b of document.querySelectorAll('[data-tab]')) b.disabled = true;
+    $('view').replaceChildren(empty('No pude leer tus datos guardados. No se borró nada. Cierra la app y vuelve a abrirla.'));
+  }
+}
+// Espera a que carguen todas las partes antes de dibujar.
+window.addEventListener('DOMContentLoaded', start);

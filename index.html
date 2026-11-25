@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+<title>Dinero</title>
+<meta name="theme-color" content="#0E1013">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Dinero">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main id="view"></main>
+<nav id="nav">
+  <button data-tab="home">Inicio</button>
+  <button data-tab="moves">Historial</button>
+  <button id="add" aria-label="Añadir movimiento">+</button>
+  <button data-tab="reports">Reportes</button>
+  <button data-tab="plans">Planes</button>
+</nav>
+<dialog id="sheet">
+  <form id="form" novalidate></form>
+</dialog>
+<input id="file" type="file" accept=".json,application/json" hidden>
+<div id="toast" role="status"></div>
+<script src="logic.js"></script>
+<script src="ui.js"></script>
+<script src="app.js"></script>
+<script src="plans.js"></script>
+<script src="lock.js"></script>
+<script src="web.js"></script>
+</body>
+</html>
