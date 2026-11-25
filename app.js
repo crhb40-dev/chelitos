@@ -374,6 +374,27 @@ function go(next) {
   });
 }
 
+// Deslizar el dedo: hacia la izquierda pasa al apartado de la derecha, y al revés.
+let touch = null;
+$('view').addEventListener('touchstart', (e) => {
+  // No cuenta si empieza en un campo o en una fila que se desplaza de lado (las cuentas).
+  const row = e.target.closest('.scroll');
+  const busy = e.touches.length > 1 || e.target.closest('input, select') || (row && row.scrollWidth > row.clientWidth);
+  touch = busy ? null : { x: e.touches[0].clientX, y: e.touches[0].clientY, at: Date.now() };
+}, { passive: true });
+$('view').addEventListener('touchcancel', () => { touch = null; }, { passive: true });
+$('view').addEventListener('touchend', (e) => {
+  if (!touch || !ready || window.locked || $('sheet').open) return;
+  const dx = e.changedTouches[0].clientX - touch.x, dy = e.changedTouches[0].clientY - touch.y;
+  const quick = Date.now() - touch.at < 700;
+  touch = null;
+  if (!quick || Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+  const tabs = [...document.querySelectorAll('[data-tab]')].map((b) => b.dataset.tab);
+  if (tab === 'settings') { if (dx > 0) go('home'); return; }
+  const next = tabs[tabs.indexOf(tab) + (dx < 0 ? 1 : -1)];
+  if (next) go(next);
+}, { passive: true });
+
 $('add').onclick = () => moveForm();
 $('sheet').oncancel = (e) => { e.preventDefault(); closeSheet(); };
 const NAV_ICONS = { home: 'home', moves: 'list', reports: 'chart', plans: 'target' };

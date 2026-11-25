@@ -11,6 +11,8 @@ button:active{transform:scale(.95)}
 button:disabled{opacity:.4}
 svg{flex:none}
 main{flex:1;overflow-y:auto;overflow-x:hidden;padding:calc(env(safe-area-inset-top) + 20px) 20px 28px}
+main{touch-action:pan-y pinch-zoom}
+.scroll{touch-action:pan-x pan-y}
 main>*{animation:up .45s var(--ease) both}
 main>:nth-child(2){animation-delay:40ms}main>:nth-child(3){animation-delay:80ms}main>:nth-child(4){animation-delay:120ms}main>:nth-child(5){animation-delay:160ms}main>:nth-child(n+6){animation-delay:200ms}
 main.still,main.still *{animation:none!important}
