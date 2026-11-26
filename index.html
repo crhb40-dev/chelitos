@@ -24,10 +24,10 @@
   <button data-tab="plans">Planes</button>
 </nav>
 <dialog id="sheet">
-  <div class="grab" aria-hidden="true"></div>
+  <div class="sheethead"><span class="grab" aria-hidden="true"></span><button id="close" type="button" aria-label="Cerrar">✕</button></div>
   <form id="form" novalidate></form>
 </dialog>
-<input id="file" type="file" accept=".json,application/json" hidden>
+<input id="file" type="file" accept="*/*" hidden>
 <input id="photo" type="file" accept="image/*" hidden>
 <dialog id="viewer" aria-label="Foto del recibo"></dialog>
 <div id="toast" role="status"></div>

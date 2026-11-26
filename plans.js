@@ -1,6 +1,6 @@
 // Presupuestos, pagos fijos, metas y deudas.
 const FREQ = { week: 'Cada semana', half: 'Quincenal (15 y fin de mes)', month: 'Cada mes' };
-const BAD_AMOUNT = 'Escribe un monto mayor que 0. Usa punto para los centavos.';
+const BAD_AMOUNT = 'Escribe un monto mayor que 0.';
 const drop = (key, id, done) => () => update((d) => { d[key] = d[key].filter((x) => x.id !== id); }, done);
 
 /* ---------- Presupuestos ---------- */
@@ -88,7 +88,7 @@ function goalForm(g) {
     onSave: (v) => {
       const target = L.parseAmount(v.target), saved = L.parseAmount(v.saved, { zero: true });
       if (!v.name.trim()) return 'Ponle un nombre.';
-      if (!target || saved === null) return 'Revisa los montos. Usa punto para los centavos.';
+      if (!target || saved === null) return 'Revisa los montos.';
       return update((d) => upsert(d.goals, { id: g?.id || uid(), name: v.name.trim(), target, saved, currency: g?.currency || cur }), 'Meta guardada');
     },
     onDelete: g && drop('goals', g.id, 'Meta borrada'),
@@ -128,7 +128,7 @@ function debtForm(x) {
     onSave: (v) => {
       const total = L.parseAmount(v.total), paid = L.parseAmount(v.paid, { zero: true });
       if (!v.name.trim()) return 'Ponle un nombre.';
-      if (!total || paid === null) return 'Revisa los montos. Usa punto para los centavos.';
+      if (!total || paid === null) return 'Revisa los montos.';
       return update((d) => upsert(d.debts, { id: x?.id || uid(), name: v.name.trim(), dir: v.dir, total, paid, currency: x?.currency || cur }), 'Deuda guardada');
     },
     // Los movimientos ya anotados se conservan; solo se sueltan de la deuda.
@@ -172,7 +172,8 @@ function debtRow(x) {
 
 /* ---------- Pantalla e inicio ---------- */
 screens.plans = (view) => {
-  const block = (title, action, add, rows, none) => view.append(section(title, action, add), el('div', { className: 'card' }, ...(rows.length ? rows : [empty(none)])));
+  const block = (title, action, add, rows, none) => view.append(section(title, rows.length ? action : '', add),
+    el('div', { className: 'card' }, ...(rows.length ? rows : [empty(none), button(`Crear ${action.slice(2).toLowerCase()}`, add, 'wide add')])));
   const here = mine();
   view.append(el('div', { className: 'head' }, el('h1', { textContent: 'Planes' })), curSwitch());
   block('Presupuestos del mes', '+ Límite', () => budgetForm(), L.budgets(here, L.today().slice(0, 7)).map(budgetRow), 'Pon un límite a una categoría y te aviso cuando te acerques.');

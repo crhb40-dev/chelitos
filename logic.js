@@ -17,8 +17,8 @@
         cat('ropa', 'Ropa', 'out', 'shirt', COLORS[4]), cat('salud', 'Salud', 'out', 'heart', COLORS[7]),
         cat('ocio', 'Diversión', 'out', 'game', COLORS[6]), cat('deudas', 'Deudas', 'out', 'card', COLORS[5]),
         cat('otro', 'Otro', 'out', 'dots', GRAY),
-        cat('ingreso', 'Ingreso', 'in', 'cash', COLORS[5]), cat('sueldo', 'Sueldo', 'in', 'work', COLORS[0]),
-        cat('venta', 'Venta', 'in', 'cart', COLORS[3]), cat('cobros', 'Cobros', 'in', 'card', COLORS[2]),
+        cat('ingreso', 'Ingreso', 'in', 'coins', COLORS[5]), cat('sueldo', 'Sueldo', 'in', 'work', COLORS[0]),
+        cat('venta', 'Venta', 'in', 'cart', COLORS[3]), cat('cobros', 'Cobros', 'in', 'hand', COLORS[2]),
       ],
       movements: [], goals: [], recurring: [], debts: [], favorites: [],
     };
@@ -28,7 +28,8 @@
     let s = String(str).replace(/[$\s]/g, '');
     const sign = negative && s.startsWith('-') ? -1 : 1;
     if (sign < 0) s = s.slice(1);
-    // coma = miles, punto = decimales; "12,50" se rechaza para no leerlo como 1250
+    s = s.replace(/^(\d+),(\d{1,2})$/, '$1.$2').replace(/^(\d+)\.$/, '$1'); // "12,50" y "12."
+    // coma con 3 cifras = miles ("1,500"); con 1-2 cifras = centavos ("12,50")
     if (!/^(\d+|\d{1,3}(,\d{3})+)(\.\d{1,2})?$/.test(s)) return null;
     const cents = Math.round(Number(s.replace(/,/g, '')) * 100);
     return cents <= MAX && (cents > 0 || (zero && cents === 0)) ? sign * cents || 0 : null;
@@ -69,6 +70,10 @@
   // Datos guardados antes de tener otras monedas: todo era en pesos.
   function fill(d) {
     d.favorites ??= []; // gastos frecuentes
+    for (const c of d.categories || []) { // iconos de fábrica repetidos en versiones anteriores
+      if (c?.id === 'ingreso' && c.icon === 'cash') c.icon = 'coins';
+      if (c?.id === 'cobros' && c.icon === 'card') c.icon = 'hand';
+    }
     for (const k of ['accounts', 'goals', 'debts']) for (const x of d[k] || []) if (x) x.currency ??= 'peso';
     for (const c of d.categories || []) if (c) for (const k of Object.values(BUDGET)) c[k] ??= 0;
     return d;
@@ -228,14 +233,6 @@
     d.accounts = d.accounts.filter((a) => a.id !== id);
   }
 
-  // Teclas del teclado propio: dígitos, punto y borrar.
-  function keypad(value, key) {
-    if (key === '⌫') return value.slice(0, -1);
-    if (key === '.') return value.includes('.') ? value : (value || '0') + '.';
-    const next = value === '0' ? key : value + key;
-    return /^\d{0,9}(\.\d{0,2})?$/.test(next) ? next : value;
-  }
-
   const ACCENTS = [['#C6F24E', 'Lima'], ['#7CC4FF', 'Azul'], ['#C4B0FF', 'Morado'], ['#FF9EC8', 'Rosa'], ['#FFB35C', 'Naranja']];
   const BLOCKS = ['today', 'favorites', 'total', 'accounts', 'spending', 'budgets', 'upcoming', 'recent']; // secciones del inicio
 
@@ -374,7 +371,7 @@
 
   const api = {
     notificationPlan,    calendar, compare, dailyAllowance, totalPesos, reminders, csv,
-    keypad, ACCENTS, BLOCKS, prefs,
+    ACCENTS, BLOCKS, prefs,
     COLORS, FIXED, defaultData, parseAmount, today, shiftMonth, nextDate, load, balances, summary,
     BUDGET, view, curOf, spentByKind, windowEnd, lastMonths, search, budgets, debtPaid, payRecurring, removeCategory, removeAccount,
   };

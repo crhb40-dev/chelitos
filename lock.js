@@ -83,6 +83,7 @@ function lockNow() {
   if (!lockData || window.locked) return;
   window.locked = true;
   if ($('sheet').open) $('sheet').close();
+  if ($('viewer').open) $('viewer').close();
   $('view').inert = $('nav').inert = true;
   const input = el('input', { type: 'password', inputMode: 'numeric', maxLength: 6, ariaLabel: 'PIN', placeholder: 'PIN', autocomplete: 'off' });
   const error = el('p', { className: 'error', role: 'alert' });

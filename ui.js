@@ -40,7 +40,7 @@ const asInput = (c) => c === undefined || c === null ? '' : String(c / 100);
 const cap = (s) => s[0].toUpperCase() + s.slice(1);
 const toDate = (s) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d || 1); };
 const monthName = (m) => cap(toDate(m).toLocaleDateString('es', { month: 'long', year: 'numeric' }));
-const monthShort = (m) => cap(toDate(m).toLocaleDateString('es', { month: 'short' }).replace('.', ''));
+const monthShort = (m) => cap(toDate(m).toLocaleDateString('es', { month: 'short' }).replace('.', '').slice(0, 3));
 const longDay = (d) => d === L.today() ? 'Hoy' : d === L.today(new Date(Date.now() - 864e5)) ? 'Ayer'
   : cap(toDate(d).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', ...(d.slice(0, 4) !== L.today().slice(0, 4) && { year: 'numeric' }) }));
 const dayName = (d) => d === L.today() ? 'Hoy' : toDate(d).toLocaleDateString('es', { day: 'numeric', month: 'short', ...(d.slice(0, 4) !== L.today().slice(0, 4) && { year: 'numeric' }) });
@@ -78,6 +78,10 @@ const ICONS = {
   help: 'M12 21a9 9 0 100-18 9 9 0 000 18zM9.500 9a2.500 2.500 0 015 0c0 2-2.500 2-2.500 4M12 17h.01',
   sun: 'M12 8a4 4 0 100 8 4 4 0 000-8zM12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.500 1.500M17.500 17.500L19 19M19 5l-1.500 1.500M6.500 17.500L5 19',
   filter: 'M3 5h18l-7 8v6l-4 2v-8z',
+  left: 'M15 6l-6 6 6 6',
+  right: 'M9 6l6 6-6 6',
+  coins: 'M12 4a7 3 0 100 6 7 3 0 100-6zM5 7v5c0 1.700 3.100 3 7 3s7-1.300 7-3V7M5 12v5c0 1.700 3.100 3 7 3s7-1.300 7-3v-5',
+  hand: 'M7 11V5a1.500 1.500 0 013 0v5M10 10V4a1.500 1.500 0 013 0v6M13 10V5a1.500 1.500 0 013 0v7M16 12V8a1.500 1.500 0 013 0v6a7 7 0 01-7 7h-1a7 7 0 01-5-2l-3-4a1.500 1.500 0 012-2l2 2',
   list: 'M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01',
   chart: 'M4 20h16M7 20v-8M12 20V4M17 20v-12',
   target: 'M12 3a9 9 0 100 18 9 9 0 000-18zM12 8a4 4 0 100 8 4 4 0 000-8zM12 12h.01',
@@ -111,7 +115,7 @@ function track(ratio, color) {
   return el('div', { className: 'track' }, fill);
 }
 
-const empty = (text) => el('p', { className: 'empty', textContent: text });
+const empty = (text) => el('div', { className: 'empty' }, el('span', { className: 'eicon' }, icon('dots', 20)), el('p', { textContent: text }));
 const section = (title, action, onclick) => el('div', { className: 'section' }, el('h2', { textContent: title }),
   action ? el('button', { className: 'link', textContent: action, onclick }) : null);
 const button = (textContent, onclick, className = 'wide') => el('button', { type: 'button', className, textContent, onclick });
@@ -160,6 +164,17 @@ function closeSheet(from = 0) {
   return closing;
 }
 
+$('close').onclick = () => closeSheet();
+
+// Tocar la zona oscura de fuera cierra la hoja o la foto, como Cancelar.
+for (const box of [$('sheet'), $('viewer')]) {
+  box.addEventListener('click', (e) => {
+    const r = box.getBoundingClientRect();
+    const outside = e.clientY < r.top || e.clientY > r.bottom || e.clientX < r.left || e.clientX > r.right;
+    if (e.target === box && outside) { if (box === $('sheet')) closeSheet(); else box.close(); }
+  });
+}
+
 // Arrastrar la hoja desde arriba la cierra.
 (() => {
   const d = $('sheet');
@@ -186,7 +201,7 @@ function closeSheet(from = 0) {
 })();
 
 /* Formulario único para toda la app.
-   fields: {key, label, type: seg|money|keypad|text|date|select|chips|icons|colors|pin, options, show(values)}
+   fields: {key, label, type: seg|money|text|date|select|chips|icons|colors|pin, options, show(values), focus}
    more: true esconde el campo tras "Más opciones" (salvo que always(values)). submit: true en chips guarda al tocar.
    options puede ser una lista [[valor, texto, icono, color]] o una función(values).
    onSave(values) devuelve un texto de error, o nada si todo salió bien. */
@@ -203,7 +218,6 @@ function openForm({ title, text = [], fields, values = {}, save = 'Guardar', onS
     for (const { field, wrap, control } of parts) {
       const forced = Boolean(field.always?.(v));
       wrap.hidden = (field.show ? !field.show(v) : false) || (field.more && !expanded && !forced);
-      if (field.type === 'keypad') control.firstChild.textContent = v[field.key] || '0';
       if (typeof field.label === 'function') wrap.firstChild.textContent = field.label(v);
       const options = typeof field.options === 'function' ? field.options(v) : field.options;
       if (!options) continue;
@@ -236,21 +250,13 @@ function openForm({ title, text = [], fields, values = {}, save = 'Guardar', onS
     if (['money', 'text', 'date', 'time', 'pin'].includes(type)) {
       control = el('input', {
         type: type === 'date' || type === 'time' ? type : type === 'pin' ? 'password' : 'text',
-        inputMode: type === 'money' ? 'decimal' : type === 'pin' ? 'numeric' : 'text',
+        inputMode: field.inputMode || (type === 'money' ? 'decimal' : type === 'pin' ? 'numeric' : 'text'),
         className: type === 'money' ? 'money' : '', autocomplete: 'off', value: v[key] ?? '',
         maxLength: type === 'pin' ? 6 : 60, placeholder: field.placeholder || (type === 'money' ? '0' : ''),
         oninput: () => { v[key] = control.value; },
       });
       v[key] ??= '';
       wrap = el('label', { className: 'field' }, label, control);
-    } else if (type === 'keypad') {
-      v[key] ??= '';
-      const out = el('output', { className: 'amount', ariaLive: 'polite' });
-      control = el('div', { className: 'pad' }, out, ...[...'123456789.0⌫'].map((k) => el('button', {
-        type: 'button', textContent: k, ariaLabel: k === '⌫' ? 'Borrar' : k === '.' ? 'Punto' : k,
-        onclick: () => { v[key] = L.keypad(v[key], k); error.textContent = ''; draw(); },
-      })));
-      wrap = el('div', { className: 'field' }, el('span', { textContent: label }), control);
     } else if (type === 'select') {
       control = el('select', { onchange: () => { v[key] = control.value; draw(); } });
       wrap = el('label', { className: 'field' }, label, control);
@@ -298,5 +304,6 @@ function openForm({ title, text = [], fields, values = {}, save = 'Guardar', onS
     ...(del ? [del] : []), button('Cancelar', closeSheet, ''));
   draw();
   $('sheet').showModal();
+  parts.find((p) => p.field.focus)?.control.focus(); // abre el teclado del teléfono
   $('sheet').scrollTop = 0;
 }

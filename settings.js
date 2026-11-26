@@ -2,6 +2,9 @@
 const openParts = {}; // grupos desplegados (secciones del inicio, categorías)
 const chevron = ({ open, danger, title, ...rest }) => line({ ...rest, title: danger ? el('span', { className: 'neg', textContent: title }) : title, value: '›', valueClass: open ? 'chev open' : 'chev' });
 const group = (title, ...rows) => [el('h2', { className: 'group', textContent: title }), el('div', { className: 'card list' }, ...rows.flat().filter(Boolean))];
+// Interruptor de sí/no.
+const switchRow = (label, on, onclick) => el('button', { type: 'button', className: 'switchrow', role: 'switch', ariaChecked: String(on), onclick },
+  el('span', { textContent: label }), el('i', { className: 'switch', ariaHidden: 'true' }));
 const flip = (key) => { openParts[key] = !openParts[key]; render(true); };
 
 function homeOrder() {
@@ -19,8 +22,8 @@ function homeOrder() {
 }
 
 function currencyToggles() {
-  return el('div', { className: 'field choice', role: 'group', ariaLabel: 'Monedas que usas' }, 'Monedas que usas',
-    el('div', { className: 'seg' }, ...Object.entries(CUR).map(([k, [name]]) => el('button', { type: 'button', textContent: name, ariaPressed: String(prefs.currencies.includes(k)),
+  return el('div', { className: 'field choice', role: 'group', ariaLabel: 'Monedas que usas' }, 'Monedas que usas (puedes elegir varias)',
+    el('div', { className: 'seg checks' }, ...Object.entries(CUR).map(([k, [name]]) => el('button', { type: 'button', textContent: `${prefs.currencies.includes(k) ? '✓ ' : ''}${name}`, ariaPressed: String(prefs.currencies.includes(k)),
       onclick: async () => {
         const on = prefs.currencies.includes(k);
         if (on && prefs.currencies.length === 1) { toast('Deja al menos una moneda.'); return; }
@@ -43,9 +46,7 @@ function swatches() {
 
 function notifyRows() {
   if (!notifier) return null;
-  const yesNo = (label, key) => el('div', { className: 'field choice', role: 'group', ariaLabel: label }, label,
-    el('div', { className: 'seg' }, ...[[true, 'Sí'], [false, 'No']].map(([v, text]) => el('button', { type: 'button', textContent: text,
-      ariaPressed: String(prefs.notify[key] === v), onclick: () => setNotify({ [key]: v }) }))));
+  const yesNo = (label, key) => switchRow(label, prefs.notify[key], () => setNotify({ [key]: !prefs.notify[key] }));
   return group('Notificaciones',
     yesNo('Avisar pagos fijos (el día antes y el mismo día, 9:00)', 'payments'),
     yesNo('Recordatorio diario para anotar', 'daily'),
@@ -81,10 +82,10 @@ screens.settings = (view) => {
       choice('Tema', prefs.theme, [['dark', 'Oscuro'], ['light', 'Claro']], 'theme'),
       swatches(),
       choice('Tamaño de letra', prefs.size, [[1, 'Normal'], [1.15, 'Grande'], [1.3, 'Muy grande']], 'size'),
-      choice('Animaciones', prefs.motion, [[true, 'Sí'], [false, 'No']], 'motion')),
+      switchRow('Animaciones', prefs.motion, async () => { await savePrefs({ motion: !prefs.motion }); render(true); })),
 
     ...group('Inicio',
-      chevron({ lead: badge('list', '#3987e5'), title: 'Secciones del inicio', sub: hidden ? `${n - hidden} visibles · ${hidden} ocultas` : 'Todas visibles · ordénalas',
+      chevron({ lead: badge('list', '#3987e5'), title: 'Secciones del inicio', sub: `${hidden ? `${hidden} ocultas · ` : ''}Ordénalas u ocúltalas. Las vacías no se muestran.`,
         open: openParts.blocks, onclick: () => flip('blocks') }),
       openParts.blocks ? homeOrder() : null),
 
@@ -93,14 +94,15 @@ screens.settings = (view) => {
       chevron({ lead: badge('swap', '#c98500'), title: 'Tasas de cambio', sub: rates || 'Para ver todo junto en pesos', onclick: ratesForm })),
 
     ...group('Cuentas',
-      data.accounts.map((a) => chevron({ lead: badge(KIND[a.kind][1], KIND[a.kind][2]), title: a.name, sub: `${KIND[a.kind][0]} · ${CUR[a.currency][0]}`, onclick: () => accountForm(a) })),
+      data.accounts.map((a) => chevron({ lead: badge(KIND[a.kind][1], KIND[a.kind][2]), title: a.name, sub: [a.name !== KIND[a.kind][0] && KIND[a.kind][0], CUR[a.currency][0]].filter(Boolean).join(' · '), onclick: () => accountForm(a) })),
       chevron({ lead: badge('plus', '#199e70'), title: 'Nueva cuenta', onclick: () => accountForm() })),
 
     ...group('Categorías',
       chevron({ lead: badge('dots', '#d55181'), title: 'Tus categorías', sub: `${data.categories.length - income} de gastos · ${income} de entradas`,
         open: openParts.cats, onclick: () => flip('cats') }),
       openParts.cats ? el('div', { className: 'catgrid' },
-        ...data.categories.map((c) => el('button', { type: 'button', onclick: () => categoryForm(c) }, badge(c.icon, c.color), c.name)),
+        ...[['out', 'Gastos'], ['in', 'Entradas']].flatMap(([type, title]) => [el('p', { className: 'gridlabel', textContent: title }),
+          ...data.categories.filter((c) => c.type === type).map((c) => el('button', { type: 'button', onclick: () => categoryForm(c) }, badge(c.icon, c.color), c.name))]),
         el('button', { type: 'button', onclick: () => categoryForm() }, badge('plus', '#199e70'), 'Nueva')) : null),
 
     ...securityRows(),

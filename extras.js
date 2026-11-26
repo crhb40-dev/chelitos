@@ -51,8 +51,8 @@ screens.plans = (view) => {
   plansScreen(view);
   const rows = mine().favorites.map((f) => { const c = category(f.category); return el('div', { className: 'duo-row' },
     line({ lead: badge(c.icon, c.color), title: f.name, sub: money(f.amount), onclick: () => favoriteForm(f) }), button('Anotar', () => useFavorite(f), 'chip')); });
-  view.append(section('Gastos frecuentes', '+ Frecuente', () => favoriteForm()),
-    el('div', { className: 'card' }, ...(rows.length ? rows : [empty('Guarda lo que repites, como el pasaje, y anótalo con un toque.')])));
+  view.append(section('Gastos frecuentes', rows.length ? '+ Frecuente' : '', () => favoriteForm()),
+    el('div', { className: 'card' }, ...(rows.length ? rows : [empty('Guarda lo que repites, como el pasaje, y anótalo con un toque.'), button('Crear frecuente', () => favoriteForm(), 'wide add')])));
 };
 moveActions.push((x) => x.type !== 'transfer' && !x.debt && ['Guardar como frecuente', () => favoriteForm(null, x)]);
 
@@ -231,7 +231,7 @@ function ratesForm() {
       for (const k of ['usd', 'eur']) {
         if (!String(v[k]).trim()) continue;
         const cents = L.parseAmount(v[k]);
-        if (!cents) return 'Escribe la tasa con punto para los centavos, por ejemplo 60.50';
+        if (!cents || cents >= 1e8) return 'Escribe una tasa válida, por ejemplo 60.50';
         rates[k] = cents / 100;
       }
       await savePrefs({ rates });

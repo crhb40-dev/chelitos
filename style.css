@@ -29,9 +29,9 @@ main.still,main.still *{animation:none!important}
 .duo b{display:block;font-size:17px;overflow-wrap:anywhere}
 .section{display:flex;justify-content:space-between;align-items:center;margin:14px 0 4px}
 h2{font-size:15px;font-weight:500}
-.link{color:var(--lime);font-size:13px;padding:0 4px}
+.link{color:var(--lime);font-size:13px;padding:0 10px;min-height:48px}
 .scroll{display:flex;gap:10px;overflow-x:auto;scrollbar-width:none;margin:0 -20px 4px;padding:0 20px}
-.tile{flex:0 0 148px;background:var(--card);border-radius:20px;padding:14px;text-align:left;display:flex;flex-direction:column;gap:6px}
+.tile{flex:1 0 148px;max-width:240px;background:var(--card);border-radius:20px;padding:14px;text-align:left;display:flex;flex-direction:column;gap:6px}
 .tile b{font-size:19px;overflow-wrap:anywhere}
 .row{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:11px 0;border-bottom:1px solid var(--line)}
 .row .mid{flex:1;min-width:0;overflow-wrap:anywhere}
@@ -57,14 +57,18 @@ h2{font-size:15px;font-weight:500}
 .month{margin:4px 0 12px}
 .month button{width:44px;height:44px;min-height:44px;border-radius:50%;background:var(--card);font-size:22px;line-height:1}
 .wide{display:block;width:100%;margin-top:10px;border:1px solid var(--line);border-radius:14px;min-height:52px}
-.empty{color:var(--dim);font-size:14px;padding:14px 0}
+.empty{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;color:var(--dim);font-size:14px;line-height:1.45;padding:22px 16px;border:1px dashed var(--line);border-radius:18px;margin:6px 0}
+.card .empty{border:0;margin:0;padding:14px 8px}
+.eicon{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:var(--card);color:var(--dim)}
+.card .eicon{background:var(--bg)}
+.scroll>.wide{flex:1;margin:0}
 .filters{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}
 nav{display:flex;align-items:center;gap:6px;padding:10px 8px calc(env(safe-area-inset-bottom) + 14px);font-size:11px;border-top:1px solid var(--line)}
 nav>button[data-tab]{flex:1 1 0;min-width:0;min-height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:var(--card);border:1px solid var(--line);border-radius:18px;color:var(--dim);transition:background .25s,color .25s,border-color .25s,transform .15s var(--ease)}
 nav>button[aria-current=page]{background:var(--lime);border-color:var(--lime);color:var(--ink);font-weight:700}
 nav>button[aria-current=page] svg{animation:pop .35s var(--ease)}
 nav>#add{flex:0 0 62px;height:62px;border-radius:31px;background:var(--lime);color:var(--ink);font-size:34px;line-height:1;animation:pop .5s var(--ease) both}
-dialog{margin:auto auto 0;width:100%;max-width:520px;max-height:94%;overflow-y:auto;background:var(--card);color:var(--text);border:0;border-radius:28px 28px 0 0;padding:22px 20px calc(env(safe-area-inset-bottom) + 22px);animation:sheet .38s var(--ease) both}
+dialog{margin:auto auto 0;width:100%;max-width:520px;max-height:94%;overflow-y:auto;background:var(--card);color:var(--text);border:0;border-radius:28px 28px 0 0;padding:0 20px calc(env(safe-area-inset-bottom) + 22px);animation:sheet .38s var(--ease) both}
 dialog::backdrop{background:#000a;animation:fade .3s both}
 dialog.closing{animation:sheet .2s ease-in reverse both}
 form{display:flex;flex-direction:column;gap:14px}
@@ -100,14 +104,11 @@ main.sliding>*{animation:none}
 .actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:4px}
 .actions button{min-height:56px;border-radius:18px;font-weight:700;font-size:16px}
 .spend{background:var(--coral);color:var(--ink)}.earn{background:var(--lime);color:var(--ink)}
-dialog.fast{max-height:97%;padding-top:14px}
-dialog.fast form{gap:8px}
+dialog.fast{max-height:97%}
+dialog.fast form{gap:10px}
 dialog.fast form>h2{display:none}
 dialog.fast form{zoom:1}
-.pad{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
-.pad .amount{grid-column:1/-1;font-size:38px;font-weight:700;color:var(--text);text-align:center;overflow-wrap:anywhere}
-.pad button{min-height:48px;border-radius:14px;background:var(--bg);font-size:22px;color:var(--text)}
-.more{color:var(--dim);font-size:13px;min-height:44px;border:1px dashed var(--line);border-radius:12px}
+.more{color:var(--text);font-size:13px;min-height:44px;border:1px solid var(--line);border-radius:12px;background:var(--bg)}
 .chips.quick{grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
 .chips.quick button{padding:4px 0;font-size:10px}
 #toast{display:flex;align-items:center;justify-content:space-between;gap:12px}
@@ -162,7 +163,7 @@ dialog.fast .grab{margin-top:-4px;margin-bottom:6px}
 .spark i{flex:1;border-radius:2px;background:color-mix(in srgb,var(--text) 22%,transparent);transform-origin:bottom;animation:rise .7s var(--ease) both}
 .spark i.on{background:var(--lime)}
 .spark i.future{opacity:.35}
-.big,.row b,.tile b,.duo b,.pad .amount,.cal button,.dayhead{font-variant-numeric:tabular-nums}
+.big,.row b,.tile b,.duo b,input.money,.cal button,.dayhead{font-variant-numeric:tabular-nums}
 h2.group{font-size:12px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;margin:22px 4px 8px}
 .card.list{padding:2px 16px}
 .card.list>*{border-bottom:1px solid var(--line)}
@@ -201,6 +202,25 @@ h2.group{font-size:12px;font-weight:700;color:var(--dim);text-transform:uppercas
 .stats{margin:14px 0 4px}
 .stats>div{background:var(--card)}
 .num{font-size:30px;font-weight:700;letter-spacing:-1px;margin:2px 0 4px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+#view.dragging,#view.dragging *{animation:none!important}
+#view.dragging{will-change:transform}
+.sheethead{position:sticky;top:0;z-index:3;display:flex;justify-content:center;align-items:center;min-height:48px;margin:0 -20px 4px;padding:8px 20px 4px;background:var(--card)}
+.sheethead .grab,dialog.fast .sheethead .grab{margin:0}
+#close{position:absolute;right:12px;top:6px;width:40px;height:40px;min-height:40px;border-radius:50%;background:var(--bg);color:var(--dim);font-size:16px}
+dialog.fast .chips.quick{margin-bottom:6px}
+.count-line{margin:10px 2px 0}
+.month button{display:grid;place-items:center}
+.month button:disabled{opacity:.25}
+.add{background:var(--lime);color:var(--ink);font-weight:700;border-color:var(--lime);margin-top:4px}
+.row b.chev{font-size:24px;font-weight:400}
+.switchrow{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;text-align:left;padding:12px 0;font-size:14px;color:var(--text)}
+.switch{flex:none;width:50px;height:30px;border-radius:15px;background:var(--line);position:relative;transition:background .2s}
+.switch::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:var(--text);transition:transform .25s var(--ease),background .2s}
+[aria-checked=true] .switch{background:var(--lime)}
+[aria-checked=true] .switch::after{transform:translateX(20px);background:var(--ink)}
+.card .choice .checks button{background:var(--bg);border:2px solid var(--line)}
+.card .choice .checks button[aria-pressed=true]{background:var(--bg);border-color:var(--lime);color:var(--text);font-weight:700}
+.gridlabel{grid-column:1/-1;font-size:12px;color:var(--dim);font-weight:700;margin:6px 2px 0}
 @keyframes up{from{opacity:0;transform:translateY(16px)}}
 @keyframes grow{from{transform:scaleX(0)}}
 @keyframes rise{from{transform:scaleY(0)}}

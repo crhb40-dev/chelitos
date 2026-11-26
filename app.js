@@ -74,14 +74,14 @@ async function applyChange(change, done) {
   if (!done) return;
   buzz();
   // Deshacer solo vale si no hubo otro cambio después.
-  toast(done, async () => {
+  toast(done, () => { queue = queue.then(async () => {
     if (data !== next) { toast('Ya hiciste otro cambio; no se puede deshacer.'); return; }
     try { await store.set(KEY, JSON.stringify(before)); } catch { toast('No se pudo deshacer.'); return; }
     data = before;
     render(true);
     window.syncNotices?.();
     toast('Deshecho');
-  });
+  }).catch(() => {}); });
 }
 
 const upsert = (list, item) => {
@@ -120,7 +120,7 @@ function moveForm(x, preset = {}) {
         options: (v) => categoryOptions(v.type === 'in' ? 'in' : 'out'), show: (v) => !linked && isType('in', 'out')(v) };
       return [
         { key: 'type', label: 'Tipo', type: 'seg', options: [['out', 'Gasto'], ['in', 'Entrada'], ['transfer', 'Transferir']], show: () => !linked },
-        { key: 'amount', label: (v) => `Monto (${symbol(curOf(v.account) || home)})`, type: quick ? 'keypad' : 'money' },
+        { key: 'amount', label: (v) => `Monto (${symbol(curOf(v.account) || home)})`, type: 'money', focus: quick },
         ...(quick ? [] : [category]),
         { key: 'method', label: (v) => v.type === 'in' ? 'Cómo lo recibiste' : 'Con qué pagaste', type: 'seg', titled: true, ...hide,
           options: Object.entries(KIND).map(([k, kind]) => [k, kind[0]]), show: isType('in', 'out') },
@@ -134,7 +134,7 @@ function moveForm(x, preset = {}) {
     })(),
     onSave: (v) => {
       const amount = L.parseAmount(v.amount);
-      if (!amount) return 'Escribe un monto mayor que 0. Usa punto para los centavos.';
+      if (!amount) return 'Escribe un monto mayor que 0.';
       if (!v.date) return 'Elige una fecha.';
       if (quick && v.type !== 'transfer' && !v.picked) return 'Toca una categoría para guardar.';
       if (v.type === 'transfer' && !v.to) return 'Para transferir necesitas dos cuentas. Crea otra en Ajustes.';
@@ -161,7 +161,8 @@ function moveForm(x, preset = {}) {
   });
 }
 
-function moveRow(x) {
+// grouped: va bajo un encabezado de día, así que no repite la fecha.
+function moveRow(x, opts) {
   const transfer = x.type === 'transfer';
   const c = transfer ? { name: 'Transferencia', icon: 'swap', color: '#8B8F99' } : category(x.category);
   const where = transfer ? `${account(x.account).name} → ${account(x.to).name}` : account(x.account).name;
@@ -170,7 +171,7 @@ function moveRow(x) {
   const amount = arrived ? x.received : x.amount;
   const other = x.received ? ` · ${money(x.amount, curOf(x.account))} → ${money(x.received, curOf(x.to))}` : '';
   return line({
-    lead: badge(c.icon, c.color), title: x.note || c.name, sub: `${dayName(x.date)} · ${where}${other}`,
+    lead: badge(c.icon, c.color), title: x.note || c.name, sub: `${opts?.grouped ? '' : `${dayName(x.date)} · `}${where}${other}`,
     value: (x.type === 'in' || arrived ? '+' : x.type === 'out' || x.received ? '−' : '') + money(amount),
     valueClass: x.type === 'in' ? 'pos' : '', onclick: () => moveForm(x),
   });
@@ -202,8 +203,8 @@ screens.home = (view) => {
       el('div', { className: 'dim', textContent: monthName(now) }),
       spark(here, now, s),
       el('div', { className: 'duo' },
-        el('div', {}, '▲ Entró', el('b', { className: 'pos', textContent: money(s.income) })),
-        el('div', {}, '▼ Salió', el('b', { className: 'neg', textContent: money(s.expense) })))),
+        el('div', {}, '▲ Entró', el('b', { className: s.income ? 'pos' : '', textContent: money(s.income) })),
+        el('div', {}, '▼ Salió', el('b', { className: s.expense ? 'neg' : '', textContent: money(s.expense) })))),
     el('div', { className: 'actions' }, button('− Gasté', () => moveForm(null, { type: 'out' }), 'spend'),
       button('+ Me entró', () => moveForm(null, { type: 'in' }), 'earn')));
   countUp(big, b.total);
@@ -211,7 +212,7 @@ screens.home = (view) => {
   for (const id of prefs.order) if (!prefs.off.includes(id)) homeBlocks[id]?.[1](view, { here, s, b });
 };
 
-homeBlocks.accounts = ['Cuentas', (view, { here, b }) => view.append(section('Cuentas', '+ Cuenta', () => accountForm()),
+homeBlocks.accounts = ['Cuentas', (view, { here, b }) => view.append(section('Cuentas', here.accounts.length ? '+ Cuenta' : '', () => accountForm()),
   el('div', { className: 'scroll' }, ...(here.accounts.length ? [] : [button(`Crear cuenta en ${CUR[cur][0].toLowerCase()}`, () => accountForm())]),
     ...here.accounts.map((a) => el('button', { className: 'tile', onclick: () => accountForm(a) },
       badge(KIND[a.kind][1], KIND[a.kind][2]), el('span', { className: 'dim', textContent: a.name }),
@@ -239,8 +240,8 @@ const lastDay = (m) => { const [y, n] = m.split('-').map(Number); return `${m}-$
 function byDay(list) {
   const net = {};
   for (const x of list) net[x.date] = (net[x.date] || 0) + (x.type === 'in' ? x.amount : x.type === 'out' ? -x.amount : 0);
-  return list.flatMap((x, i) => i && list[i - 1].date === x.date ? [moveRow(x)]
-    : [el('div', { className: 'dayhead' }, el('span', { textContent: longDay(x.date) }), el('span', { textContent: money(net[x.date]) })), moveRow(x)]);
+  return list.flatMap((x, i) => i && list[i - 1].date === x.date ? [moveRow(x, { grouped: true })]
+    : [el('div', { className: 'dayhead' }, el('span', { textContent: longDay(x.date) }), el('span', { textContent: (net[x.date] > 0 ? '+' : '') + money(net[x.date]) })), moveRow(x, { grouped: true })]);
 }
 
 let showFilters = false;
@@ -253,10 +254,10 @@ screens.moves = (view) => {
     for (const x of found) { if (x.type === 'in') income += x.amount; else if (x.type === 'out') expense += x.amount; }
     results.replaceChildren(
       el('div', { className: 'duo stats' },
-        el('div', {}, '▲ Entró', el('b', { className: 'pos', textContent: money(income) })),
-        el('div', {}, '▼ Salió', el('b', { className: 'neg', textContent: money(expense) }))),
-      el('p', { className: 'dim', textContent: `${found.length} ${found.length === 1 ? 'movimiento' : 'movimientos'}` }),
-      ...(found.length ? byDay(found.slice(0, limit)) : [empty('Nada coincide con la búsqueda.')]),
+        el('div', {}, '▲ Entró', el('b', { className: income ? 'pos' : '', textContent: money(income) })),
+        el('div', {}, '▼ Salió', el('b', { className: expense ? 'neg' : '', textContent: money(expense) }))),
+      el('p', { className: 'dim count-line', textContent: `${found.length} ${found.length === 1 ? 'movimiento' : 'movimientos'}` }),
+      ...(found.length ? byDay(found.slice(0, limit)) : [empty(filters.text || filters.category || filters.account ? 'Nada coincide con la búsqueda.' : 'No hay movimientos en este periodo.')]),
       ...(found.length > limit ? [button('Ver más', () => { limit += 100; refresh(); })] : []));
   };
   const input = (key, type, label) => el('input', { type, value: filters[key], ariaLabel: label, placeholder: label, oninput: (e) => { filters[key] = e.target.value; refresh(); } });
@@ -279,8 +280,8 @@ screens.moves = (view) => {
       onclick: () => { Object.assign(filters, { from, to }); render(true); } }))),
     showFilters ? el('div', { className: 'card panel' },
       el('div', { className: 'filters' },
-        select('category', 'Todas las categorías', data.categories.map((c) => [c.id, c.name])),
-        select('account', 'Todas las cuentas', accountOptions(cur)),
+        select('category', 'Categorías', data.categories.map((c) => [c.id, c.name])),
+        select('account', 'Cuentas', accountOptions(cur)),
         el('label', { className: 'field' }, 'Desde', input('from', 'date', 'Desde')),
         el('label', { className: 'field' }, 'Hasta', input('to', 'date', 'Hasta'))),
       button('Limpiar filtros', () => { for (const k in filters) filters[k] = ''; render(true); })) : '',
@@ -319,21 +320,21 @@ screens.reports = (view) => {
   const here = mine(), s = L.summary(here, month), six = L.lastMonths(here, chartEnd, 6);
   const top = Math.max(1, ...six.flatMap((m) => [m.income, m.expense]));
   const go6 = (n) => { month = L.shiftMonth(month, n); picked = null; render(true); };
-  const arrow = (textContent, n, ariaLabel) => el('button', { textContent, ariaLabel, onclick: () => go6(n) });
+  const arrow = (name, n, ariaLabel, disabled) => el('button', { ariaLabel, disabled, onclick: () => go6(n) }, icon(name));
   const column = (m) => {
     const bar = (v, color) => { const i = el('i'); i.style.cssText = `height:${v ? Math.max(2, v / top * 100) : 0}%;background:${color}`; return i; };
     return el('button', { ariaPressed: String(m.month === month), ariaLabel: `${monthName(m.month)}: entró ${money(m.income)}, salió ${money(m.expense)}`,
       onclick: () => { month = m.month; picked = null; render(true); } },
-      el('div', { className: 'pair' }, bar(m.income, 'var(--in)'), bar(m.expense, 'var(--out)')), monthShort(m.month));
+      el('div', { className: 'pair' }, bar(m.income, 'var(--good)'), bar(m.expense, 'var(--coral)')), monthShort(m.month));
   };
   const key = (color, text) => el('span', {}, Object.assign(el('i'), { style: `background:${color}` }), text);
   view.append(
     el('div', { className: 'head' }, el('h1', { textContent: 'Reportes' })), curSwitch(),
-    el('div', { className: 'month' }, arrow('‹', -1, 'Mes anterior'), el('strong', { textContent: monthName(month) }), arrow('›', 1, 'Mes siguiente')),
-    el('div', { className: 'card' }, el('div', { className: 'duo' },
-      el('div', {}, 'Entró', el('b', { textContent: money(s.income) })),
-      el('div', {}, 'Salió', el('b', { textContent: money(s.expense) }))),
-      el('p', { className: 'dim', textContent: `Te quedó ${money(s.income - s.expense)} este mes` })));
+    el('div', { className: 'month' }, arrow('left', -1, 'Mes anterior'), el('strong', { textContent: monthName(month) }), arrow('right', 1, 'Mes siguiente', month >= L.today().slice(0, 7))),
+    el('div', { className: 'duo stats' },
+      el('div', {}, '▲ Entró', el('b', { className: s.income ? 'pos' : '', textContent: money(s.income) })),
+      el('div', {}, '▼ Salió', el('b', { className: s.expense ? 'neg' : '', textContent: money(s.expense) }))),
+    el('p', { className: 'dim count-line', textContent: `Te quedó ${money(s.income - s.expense)} este mes` }));
   for (const add of reportSections) add(view, { here });
   view.append(
     ...(s.expense ? [section('Con qué pagaste'), el('div', { className: 'card' }, ...L.spentByKind(here, month).map(([k, v]) =>
@@ -345,9 +346,11 @@ screens.reports = (view) => {
         onclick: () => { Object.assign(filters, { text: '', account: '', category: id, from: `${month}-01`, to: lastDay(month) }); go('moves'); } });
     })] : [empty('Sin gastos este mes.')])),
     section(chartEnd === L.today().slice(0, 7) ? 'Últimos 6 meses' : 'Comparación de 6 meses'),
-    el('div', { className: 'card' }, el('div', { className: 'keys' }, key('var(--in)', 'Entró'), key('var(--out)', 'Salió')),
+    el('div', { className: 'card' }, ...(six.some((m) => m.income || m.expense) ? [
+      el('div', { className: 'keys' }, key('var(--good)', 'Entró'), key('var(--coral)', 'Salió')),
       el('div', { className: 'cols' }, ...six.map(column)),
-      el('p', { className: 'dim', textContent: `Toca un mes para verlo. ${monthName(month)}: entró ${money(s.income)}, salió ${money(s.expense)}.` })));
+      el('p', { className: 'dim', textContent: `Toca un mes para verlo. ${monthName(month)}: entró ${money(s.income)}, salió ${money(s.expense)}.` })]
+      : [empty(`Aún no hay movimientos en ${CUR[cur][0].toLowerCase()} en estos meses.`)])));
 };
 
 /* ---------- Cuentas, categorías y copia ---------- */
@@ -359,12 +362,12 @@ function accountForm(a) {
       { key: 'name', label: 'Nombre', type: 'text', placeholder: 'Ej. Banco, Ahorros' },
       { key: 'kind', label: 'Tipo', type: 'seg', titled: true, options: Object.entries(KIND).map(([k, v]) => [k, v[0]]) },
       { key: 'currency', label: 'Moneda', type: 'seg', titled: true, options: Object.entries(CUR).map(([k, x]) => [k, x[0]]) },
-      { key: 'initial', label: 'Saldo con el que empieza (en tarjeta, deuda con signo -)', type: 'money' },
+      { key: 'initial', label: 'Saldo con el que empieza (en tarjeta, deuda con signo -)', type: 'money', inputMode: 'text' },
     ],
     onSave: (v) => {
       const initial = L.parseAmount(v.initial, { zero: true, negative: true });
       if (!v.name.trim()) return 'Ponle un nombre.';
-      if (initial === null) return 'Revisa el saldo. Usa punto para los centavos.';
+      if (initial === null) return 'Revisa el saldo.';
       if (a && v.currency !== a.currency && [...data.movements, ...data.recurring, ...data.favorites].some((x) => x.account === a.id || x.to === a.id)) {
         return 'No se puede cambiar la moneda de una cuenta con movimientos, pagos fijos o frecuentes. Crea otra cuenta.';
       }
@@ -381,7 +384,7 @@ function accountForm(a) {
 }
 
 // Iconos de la interfaz que no se ofrecen para categorías.
-const SYSTEM_ICONS = ['gear', 'swap', 'list', 'chart', 'target', 'eye', 'eyeoff', 'plus', 'bell', 'lock', 'face', 'upload', 'download', 'file', 'help', 'sun', 'filter'];
+const SYSTEM_ICONS = ['gear', 'swap', 'list', 'chart', 'target', 'eye', 'eyeoff', 'plus', 'bell', 'lock', 'face', 'upload', 'download', 'file', 'help', 'sun', 'filter', 'left', 'right'];
 
 function categoryForm(c) {
   openForm({
@@ -434,6 +437,12 @@ $('file').onchange = async () => {
   if (!file) return;
   let next;
   try { next = L.load(await file.text()); } catch (e) { toast(e.message); return; }
+  if (!ready) { // datos dañados: la copia los reemplaza
+    if (!confirm(`¿Reemplazar los datos dañados por la copia (${next.movements.length} movimientos)?`)) return;
+    try { await store.set(KEY, JSON.stringify(next)); } catch { toast('No se pudo guardar.'); return; }
+    location.reload();
+    return;
+  }
   if (!confirm(`¿Reemplazar todo lo actual (${data.movements.length} movimientos) por la copia (${next.movements.length} movimientos)?`)) return;
   const problem = await update((d) => Object.assign(d, next), 'Copia recuperada');
   if (problem) toast(problem);
@@ -547,6 +556,7 @@ async function settle(d, change) {
   if (change) { buzz(); enter(d.next); shown = 0; instant = true; render(true); instant = false; view.scrollTop = 0; }
   for (const m of moves) m.cancel();
   view.style.transform = '';
+  view.classList.remove('dragging');
   d.node?.remove();
   settling = false;
 }
@@ -572,6 +582,7 @@ $('view').addEventListener('touchmove', (e) => {
     if (Math.hypot(dx, dy) < 10) return;
     if (Math.abs(dx) < Math.abs(dy) * 1.2) { drag = null; return; } // es un desplazamiento hacia arriba o abajo
     drag.active = true;
+    $('view').classList.add('dragging');
     drag.width = $('view').getBoundingClientRect().width;
     for (const g of document.querySelectorAll('.ghost')) g.remove();
     for (const a of $('view').getAnimations()) a.cancel();
@@ -608,6 +619,7 @@ for (const b of document.querySelectorAll('[data-tab]')) {
 }
 plugins?.App.addListener('backButton', () => {
   if (window.locked) plugins.App.exitApp();
+  else if ($('viewer').open) $('viewer').close();
   else if ($('sheet').open) closeSheet();
   else if (tab !== 'home') go('home');
   else plugins.App.exitApp();
@@ -616,6 +628,9 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && !$
 
 async function start() {
   try {
+    prefs = L.prefs(await store.get('prefs'));
+    applyPrefs();
+    try { await window.gate?.(); } catch (e) { window.lockBroken = true; throw e; } // bloquea antes de leer nada
     const saved = await store.get(KEY);
     if (saved) data = L.load(saved);
     else {
@@ -623,10 +638,7 @@ async function start() {
       const old = await store.get(OLD_KEY);
       if (old) { data = L.load(old); await store.set(KEY, JSON.stringify(data)); }
     }
-    prefs = L.prefs(await store.get('prefs'));
-    applyPrefs();
     cur = prefs.start;
-    await window.gate?.(); // bloquea antes de mostrar nada
     ready = true;
     render();
     window.afterStart?.();
@@ -636,7 +648,11 @@ async function start() {
     console.error(e);
     $('add').disabled = true;
     for (const b of document.querySelectorAll('[data-tab]')) b.disabled = true;
-    $('view').replaceChildren(empty('No pude leer tus datos guardados. No se borró nada. Cierra la app y vuelve a abrirla.'));
+    if (window.lockBroken) { $('view').replaceChildren(empty('No pude leer el bloqueo. No se borró nada. Cierra la app y vuelve a abrirla.')); return; }
+    const raw = await store.get(KEY).catch(() => null);
+    $('view').replaceChildren(empty('No pude leer tus datos guardados. No se borró nada.'),
+      button('Recuperar una copia', () => { window.skipLock = true; $('file').click(); }),
+      raw ? button('Guardar los datos dañados para revisarlos', () => shareFile('dinero-danado.txt', raw, 'text/plain')) : null);
   }
 }
 // Espera a que carguen todas las partes antes de dibujar.
