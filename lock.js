@@ -91,7 +91,7 @@ function lockNow() {
     e.preventDefault();
     const problem = await tryPin(input.value);
     if (problem) { error.textContent = problem; input.value = ''; } else unlock();
-  } }, badge('home', '#C6F24E'), el('h2', { textContent: 'Chelitos está bloqueado' }), input, error,
+  } }, el('img', { src: 'icons/icon-192.png', alt: '', className: 'applogo' }), el('h2', { textContent: 'Chelitos está bloqueado' }), input, error,
     el('button', { className: 'primary', textContent: 'Desbloquear' }),
     lockData.bio && bioPlugin ? button('Usar huella', fingerprint) : null,
     lockData.face && canFace ? button(`Desbloquear con ${FACE}`, () => faceUnlock(error)) : null);

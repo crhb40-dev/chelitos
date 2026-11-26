@@ -1,3 +1,5 @@
+<img src="icons/icon-192.png" alt="Logo de Chelitos" width="96">
+
 # Chelitos
 
 App para llevar tu dinero en el teléfono: lo que entra, lo que sale y lo que quieres ahorrar. Funciona sin internet, sin cuentas ni anuncios, y **tus datos se quedan en tu teléfono**.
