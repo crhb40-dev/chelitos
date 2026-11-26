@@ -60,14 +60,14 @@ moveActions.push((x) => x.type !== 'transfer' && !x.debt && ['Guardar como frecu
 homeBlocks.today = ['Puedes gastar hoy', (view, { here }) => {
   const left = L.dailyAllowance(here, L.today());
   if (left === null) return;
-  view.append(el('div', { className: 'card' }, el('div', { className: 'dim', textContent: 'Puedes gastar hoy' }), el('div', { className: 'big', textContent: money(left) }),
+  view.append(el('div', { className: 'card' }, el('div', { className: 'dim', textContent: 'Puedes gastar hoy' }), el('div', { className: 'num', textContent: money(left) }),
     el('div', { className: 'dim', textContent: 'Según los límites de tus categorías. No cuenta las que no tienen límite.' })));
 }];
 
 homeBlocks.total = ['Total en pesos', (view) => {
   if (!Object.keys(prefs.rates).length) return;
   const t = L.totalPesos(data, prefs.rates);
-  view.append(el('div', { className: 'card' }, el('div', { className: 'dim', textContent: 'Todo junto, en pesos (aproximado)' }), el('div', { className: 'big', textContent: money(t.total, 'peso') }),
+  view.append(el('div', { className: 'card' }, el('div', { className: 'dim', textContent: 'Todo junto, en pesos (aproximado)' }), el('div', { className: 'num', textContent: money(t.total, 'peso') }),
     el('div', { className: 'dim', textContent: t.missing.length ? `Falta la tasa de ${t.missing.map((c) => CUR[c][0].toLowerCase()).join(' y ')}; no está sumado.` : 'Con las tasas que pusiste en Ajustes.' })));
 }];
 
@@ -217,16 +217,6 @@ function timeForm() {
     } });
 }
 
-settingsSections.push((view) => {
-  if (!notifier) return;
-  const yesNo = (label, key) => el('div', { className: 'field choice', role: 'group', ariaLabel: label }, label,
-    el('div', { className: 'seg' }, ...[[true, 'Sí'], [false, 'No']].map(([v, text]) => el('button', { type: 'button', textContent: text,
-      ariaPressed: String(prefs.notify[key] === v), onclick: () => setNotify({ [key]: v }) }))));
-  view.append(section('Notificaciones'), yesNo('Avisar pagos fijos (el día antes y el mismo día, 9:00)', 'payments'),
-    yesNo('Recordatorio diario para anotar', 'daily'),
-    ...(prefs.notify.daily ? [button(`Hora del recordatorio: ${prefs.notify.time}`, timeForm)] : []),
-    el('p', { className: 'dim', textContent: 'La hora puede variar unos minutos según el ahorro de batería.' }));
-});
 
 /* ---------- Personalización ---------- */
 function nameForm() {
@@ -248,23 +238,3 @@ function ratesForm() {
       render(true);
     } });
 }
-
-settingsSections.push((view) => view.append(section('A tu gusto'),
-  el('div', {}, button(prefs.name ? `Nombre: ${prefs.name}` : 'Poner tu nombre', nameForm), button('Tasas para el total en pesos', ratesForm), button('Ver la guía', guide)),
-  section('Apariencia'),
-  choice('Tema', prefs.theme, [['dark', 'Oscuro'], ['light', 'Claro']], 'theme'),
-  choice('Tamaño de letra', prefs.size, [[1, 'Normal'], [1.15, 'Grande'], [1.3, 'Muy grande']], 'size'),
-  choice('Animaciones', prefs.motion, [[true, 'Sí'], [false, 'No']], 'motion'),
-  section('Monedas'),
-  el('div', { className: 'field choice', role: 'group', ariaLabel: 'Monedas que usas' }, 'Monedas que usas (toca para mostrar u ocultar)',
-    el('div', { className: 'seg' }, ...Object.entries(CUR).map(([k, [name]]) => el('button', { type: 'button', textContent: name, ariaPressed: String(prefs.currencies.includes(k)),
-      onclick: async () => {
-        const on = prefs.currencies.includes(k);
-        if (on && prefs.currencies.length === 1) { toast('Deja al menos una moneda.'); return; }
-        const currencies = Object.keys(CUR).filter((c) => (c === k ? !on : prefs.currencies.includes(c)));
-        const start = currencies.includes(prefs.start) ? prefs.start : currencies[0];
-        await savePrefs({ currencies, start });
-        if (!currencies.includes(cur)) cur = start;
-        render(true);
-      } })))),
-  choice('Moneda al abrir', prefs.start, prefs.currencies.map((k) => [k, CUR[k][0]]), 'start')));

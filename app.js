@@ -5,7 +5,6 @@ let tab = 'home', month = L.today().slice(0, 7), picked = null, ready = false, c
 const filters = { text: '', category: '', account: '', from: '', to: '' };
 const screens = {};           // nombre -> función(view)
 const homeBlocks = {};        // secciones del inicio: id -> [nombre, función(view, datos)]
-const settingsSections = [];  // bloques extra de ajustes
 const homeNotices = [];       // avisos arriba del inicio
 const reportSections = [];    // bloques extra de reportes: función(view, datos)
 const moveActions = [];       // botones extra al editar un movimiento: función(movimiento) -> [texto, acción]
@@ -18,12 +17,35 @@ const curOf = (id) => L.curOf(data, id);
 // Sin moneda: todas las cuentas, indicando cuáles son en dólares.
 const accountOptions = (k) => data.accounts.filter((a) => !k || a.currency === k)
   .map((a) => [a.id, !k && a.currency !== 'peso' ? `${a.name} (${symbol(a.currency)})` : a.name]);
-const curSwitch = () => el('div', { className: 'seg cur', role: 'group', ariaLabel: 'Moneda' },
-  ...Object.entries(CUR).filter(([k]) => prefs.currencies.includes(k) || k === cur).map(([k, [name]]) => el('button', { textContent: name, ariaPressed: String(k === cur),
-    onclick: () => {
-      const order = Object.keys(CUR);
-      if (k !== cur) slide(order.indexOf(k) > order.indexOf(cur) ? 1 : -1, () => { cur = k; picked = null; shown = 0; });
-    } })));
+let lastCur = null; // para animar la píldora desde la moneda anterior
+const visibleCurrencies = () => Object.keys(CUR).filter((k) => prefs.currencies.includes(k) || k === cur);
+function curSwitch() {
+  const list = visibleCurrencies(), i = list.indexOf(cur), from = list.indexOf(lastCur);
+  const pill = el('span', { className: 'pill', ariaHidden: 'true' });
+  const box = el('div', { className: 'seg cur', role: 'group', ariaLabel: 'Moneda' }, pill,
+    ...list.map((k) => el('button', { textContent: CUR[k][0], ariaPressed: String(k === cur), onclick: () => switchCurrency(k) })));
+  box.style.setProperty('--n', list.length);
+  pill.style.transform = `translateX(${i * 100}%)`;
+  if (from >= 0 && from !== i && !calm()) {
+    pill.animate([{ transform: `translateX(${from * 100}%)` }, { transform: `translateX(${i * 100}%)` }], { duration: 360, easing: 'cubic-bezier(.3,1.3,.5,1)' });
+  }
+  lastCur = cur;
+  return box;
+}
+
+// Cambia de moneda sin mover la pantalla: la píldora se desliza, el saldo cuenta hasta el nuevo y el resto entra de lado.
+function switchCurrency(k) {
+  if (k === cur || settling) return;
+  const list = visibleCurrencies(), dir = list.indexOf(k) > list.indexOf(cur) ? 1 : -1;
+  buzz();
+  cur = k;
+  picked = null;
+  render(true);
+  if (calm()) return;
+  const items = [...$('view').children], start = items.findIndex((n) => n.classList.contains('cur')) + 1;
+  items.slice(start).forEach((n, i) => n.animate([{ opacity: 0, transform: `translateX(${dir * 28}px)` }, { opacity: 1, transform: 'none' }],
+    { duration: 320, delay: Math.min(i, 6) * 35, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' }));
+}
 const categoryOptions = (type) => data.categories.filter((c) => c.type === type).map((c) => [c.id, c.name, c.icon, c.color]);
 
 // Los cambios se hacen sobre una copia, se validan y solo entonces reemplazan lo guardado.
@@ -50,6 +72,7 @@ async function applyChange(change, done) {
   render(true);
   window.syncNotices?.();
   if (!done) return;
+  buzz();
   // Deshacer solo vale si no hubo otro cambio después.
   toast(done, async () => {
     if (data !== next) { toast('Ya hiciste otro cambio; no se puede deshacer.'); return; }
@@ -154,6 +177,18 @@ function moveRow(x) {
 }
 
 /* ---------- Inicio ---------- */
+// Gasto de cada día del mes, en barras pequeñas. Hoy en verde.
+function spark(here, now, s) {
+  if (!s.expense) return null;
+  const days = L.calendar(here, now).days, peak = Math.max(...days.map((d) => d.expense)), today = L.today();
+  return el('div', { className: 'spark', ariaHidden: 'true' }, ...days.map((d, i) => {
+    const bar = el('i', { className: d.date === today ? 'on' : d.date > today ? 'future' : '' });
+    bar.style.height = `${d.expense ? Math.max(10, d.expense / peak * 100) : 4}%`;
+    bar.style.animationDelay = `${i * 12}ms`;
+    return bar;
+  }));
+}
+
 screens.home = (view) => {
   const here = mine(), now = L.today().slice(0, 7), s = L.summary(here, now), b = L.balances(data, cur);
   const big = el('div', { className: 'big' + (b.total < 0 && !prefs.hidden ? ' neg' : '') });
@@ -165,6 +200,7 @@ screens.home = (view) => {
     curSwitch(),
     el('div', { className: 'card hero' }, el('div', { className: 'dim', textContent: `Saldo total en ${CUR[cur][0].toLowerCase()}` }), big,
       el('div', { className: 'dim', textContent: monthName(now) }),
+      spark(here, now, s),
       el('div', { className: 'duo' },
         el('div', {}, '▲ Entró', el('b', { className: 'pos', textContent: money(s.income) })),
         el('div', {}, '▼ Salió', el('b', { className: 'neg', textContent: money(s.expense) })))),
@@ -197,33 +233,57 @@ homeBlocks.recent = ['Últimos movimientos', (view, { here }) => {
 }];
 
 /* ---------- Buscar ---------- */
+// Lista con un encabezado por día y lo que dejó ese día (sin transferencias).
+const lastDay = (m) => { const [y, n] = m.split('-').map(Number); return `${m}-${String(new Date(y, n, 0).getDate()).padStart(2, '0')}`; };
+
+function byDay(list) {
+  const net = {};
+  for (const x of list) net[x.date] = (net[x.date] || 0) + (x.type === 'in' ? x.amount : x.type === 'out' ? -x.amount : 0);
+  return list.flatMap((x, i) => i && list[i - 1].date === x.date ? [moveRow(x)]
+    : [el('div', { className: 'dayhead' }, el('span', { textContent: longDay(x.date) }), el('span', { textContent: money(net[x.date]) })), moveRow(x)]);
+}
+
+let showFilters = false;
 screens.moves = (view) => {
   const results = el('div');
   let limit = 60;
   const refresh = () => {
     const found = L.search(mine(), filters);
-    const net = found.reduce((n, x) => n + (x.type === 'in' ? x.amount : x.type === 'out' ? -x.amount : 0), 0); // sin transferencias
+    let income = 0, expense = 0; // sin transferencias
+    for (const x of found) { if (x.type === 'in') income += x.amount; else if (x.type === 'out') expense += x.amount; }
     results.replaceChildren(
-      el('p', { className: 'dim', textContent: `${found.length} ${found.length === 1 ? 'movimiento' : 'movimientos'} · balance ${money(net)}` }),
-      ...(found.length ? found.slice(0, limit).map(moveRow) : [empty('Nada coincide con la búsqueda.')]),
+      el('div', { className: 'duo stats' },
+        el('div', {}, '▲ Entró', el('b', { className: 'pos', textContent: money(income) })),
+        el('div', {}, '▼ Salió', el('b', { className: 'neg', textContent: money(expense) }))),
+      el('p', { className: 'dim', textContent: `${found.length} ${found.length === 1 ? 'movimiento' : 'movimientos'}` }),
+      ...(found.length ? byDay(found.slice(0, limit)) : [empty('Nada coincide con la búsqueda.')]),
       ...(found.length > limit ? [button('Ver más', () => { limit += 100; refresh(); })] : []));
   };
   const input = (key, type, label) => el('input', { type, value: filters[key], ariaLabel: label, placeholder: label, oninput: (e) => { filters[key] = e.target.value; refresh(); } });
   const select = (key, label, options) => {
-    const s = el('select', { ariaLabel: label, onchange: () => { filters[key] = s.value; refresh(); } },
+    const s = el('select', { ariaLabel: label, onchange: () => { filters[key] = s.value; render(true); } },
       el('option', { value: '', textContent: label }), ...options.map(([value, textContent]) => el('option', { value, textContent })));
     s.value = filters[key];
     if (s.value !== filters[key]) filters[key] = s.value = '';
     return s;
   };
+  const today = L.today(), m = today.slice(0, 7), pm = L.shiftMonth(m, -1);
+  const ranges = [['Todo', '', ''], ['Hoy', today, today], ['Este mes', `${m}-01`, lastDay(m)], ['Mes pasado', `${pm}-01`, lastDay(pm)]];
+  const extra = ['category', 'account'].filter((k) => filters[k]).length + (ranges.some(([, f, t]) => f === filters.from && t === filters.to) ? 0 : 1);
+  const toggle = el('button', { className: 'fbtn', ariaLabel: 'Filtros', ariaExpanded: String(showFilters), onclick: () => { showFilters = !showFilters; render(true); } },
+    icon('filter'), extra ? el('span', { className: 'count', textContent: String(extra) }) : null);
   view.append(el('div', { className: 'head' }, el('h1', { textContent: 'Historial' })), curSwitch(),
-    input('text', 'search', 'Buscar por nota o categoría'),
-    el('div', { className: 'filters' },
-      select('category', 'Categorías', data.categories.map((c) => [c.id, c.name])),
-      select('account', 'Cuentas', accountOptions(cur)),
-      el('label', { className: 'field' }, 'Desde', input('from', 'date', 'Desde')),
-      el('label', { className: 'field' }, 'Hasta', input('to', 'date', 'Hasta'))),
-    button('Limpiar búsqueda', () => { for (const k in filters) filters[k] = ''; render(true); }),
+    el('div', { className: 'searchrow' }, input('text', 'search', 'Buscar por nota o categoría'), toggle),
+    el('div', { className: 'ranges', role: 'group', ariaLabel: 'Fechas' }, ...ranges.map(([name, from, to]) => el('button', {
+      textContent: name, ariaPressed: String(filters.from === from && filters.to === to),
+      onclick: () => { Object.assign(filters, { from, to }); render(true); } }))),
+    showFilters ? el('div', { className: 'card panel' },
+      el('div', { className: 'filters' },
+        select('category', 'Todas las categorías', data.categories.map((c) => [c.id, c.name])),
+        select('account', 'Todas las cuentas', accountOptions(cur)),
+        el('label', { className: 'field' }, 'Desde', input('from', 'date', 'Desde')),
+        el('label', { className: 'field' }, 'Hasta', input('to', 'date', 'Hasta'))),
+      button('Limpiar filtros', () => { for (const k in filters) filters[k] = ''; render(true); })) : '',
     results);
   refresh();
 };
@@ -282,7 +342,7 @@ screens.reports = (view) => {
     el('div', { className: 'card' }, ...(s.expense ? [donut(s), ...s.byCategory.map(([id, v]) => {
       const c = category(id);
       return line({ lead: badge(c.icon, c.color), title: c.name, sub: `${Math.round(v * 100 / s.expense)}%`, value: money(v),
-        onclick: () => { Object.assign(filters, { text: '', account: '', category: id, from: `${month}-01`, to: `${month}-31` }); go('moves'); } });
+        onclick: () => { Object.assign(filters, { text: '', account: '', category: id, from: `${month}-01`, to: lastDay(month) }); go('moves'); } });
     })] : [empty('Sin gastos este mes.')])),
     section(chartEnd === L.today().slice(0, 7) ? 'Últimos 6 meses' : 'Comparación de 6 meses'),
     el('div', { className: 'card' }, el('div', { className: 'keys' }, key('var(--in)', 'Entró'), key('var(--out)', 'Salió')),
@@ -320,6 +380,9 @@ function accountForm(a) {
   });
 }
 
+// Iconos de la interfaz que no se ofrecen para categorías.
+const SYSTEM_ICONS = ['gear', 'swap', 'list', 'chart', 'target', 'eye', 'eyeoff', 'plus', 'bell', 'lock', 'face', 'upload', 'download', 'file', 'help', 'sun', 'filter'];
+
 function categoryForm(c) {
   openForm({
     title: c ? 'Editar categoría' : 'Nueva categoría',
@@ -327,7 +390,7 @@ function categoryForm(c) {
     fields: [
       { key: 'type', label: 'Para', type: 'seg', options: [['out', 'Gastos'], ['in', 'Entradas']], show: () => !c },
       { key: 'name', label: 'Nombre', type: 'text' },
-      { key: 'icon', label: 'Icono', type: 'icons', options: Object.keys(ICONS).filter((k) => !['gear', 'swap', 'list', 'chart', 'target', 'eye', 'eyeoff'].includes(k)).map((k, i) => [k, `Icono ${i + 1}`]) },
+      { key: 'icon', label: 'Icono', type: 'icons', options: Object.keys(ICONS).filter((k) => !SYSTEM_ICONS.includes(k)).map((k, i) => [k, `Icono ${i + 1}`]) },
       { key: 'color', label: 'Color', type: 'colors', options: L.COLORS.map((x, i) => [x, `Color ${i + 1}`]) },
     ],
     onSave: (v) => {
@@ -338,36 +401,6 @@ function categoryForm(c) {
   });
 }
 
-screens.settings = (view) => {
-  view.append(el('div', { className: 'head' }, el('h1', { textContent: 'Ajustes' }), button('Listo', () => go('home'), 'link')),
-    section('Cuentas', '+ Nueva', () => accountForm()),
-    el('div', { className: 'card' }, ...data.accounts.map((a) => line({ lead: badge(KIND[a.kind][1], KIND[a.kind][2]), title: a.name, sub: `${KIND[a.kind][0]} · ${CUR[a.currency][0]}`, onclick: () => accountForm(a) }))));
-  for (const add of settingsSections) add(view);
-  const set = async (change) => { await savePrefs(change); render(true); };
-  const move = (i, step) => { const order = [...prefs.order]; [order[i], order[i + step]] = [order[i + step], order[i]]; set({ order }); };
-  const arrow = (textContent, ariaLabel, disabled, onclick) => el('button', { className: 'mini', textContent, ariaLabel, disabled, onclick });
-  view.append(section('Color'),
-    el('div', { className: 'swatches', role: 'group', ariaLabel: 'Color principal' }, ...L.ACCENTS.map(([color, name]) => {
-      const b = el('button', { ariaPressed: String(prefs.accent === color), onclick: () => set({ accent: color }) }, el('i'), name);
-      b.firstChild.style.background = color;
-      return b;
-    })),
-    section('Secciones del inicio'),
-    el('div', { className: 'card' }, ...prefs.order.map((id, i) => {
-      const name = homeBlocks[id][0], off = prefs.off.includes(id);
-      return el('div', { className: 'order' }, el('span', { textContent: name, className: off ? 'dim' : '' }),
-        arrow('↑', `Subir ${name}`, i === 0, () => move(i, -1)),
-        arrow('↓', `Bajar ${name}`, i === prefs.order.length - 1, () => move(i, 1)),
-        el('button', { className: 'mini wideb', textContent: off ? 'Mostrar' : 'Ocultar', ariaLabel: `${off ? 'Mostrar' : 'Ocultar'} ${name}`,
-          onclick: () => set({ off: off ? prefs.off.filter((x) => x !== id) : [...prefs.off, id] }) }));
-    })));
-  view.append(section('Categorías', '+ Nueva', () => categoryForm()),
-    el('div', { className: 'card' }, ...data.categories.map((c) => line({ lead: badge(c.icon, c.color), title: c.name, sub: c.type === 'in' ? 'Entradas' : 'Gastos', onclick: () => categoryForm(c) }))),
-    section('Copia de seguridad'),
-    el('div', {}, button('Guardar copia', exportBackup), button('Recuperar copia', () => { window.skipLock = true; $('file').click(); }),
-      button('Exportar a Excel (CSV)', () => shareFile(`dinero-${L.today()}.csv`, L.csv(data), 'text/csv'))),
-    el('p', { className: 'dim', textContent: 'Las fotos de recibos no van en la copia.' }));
-};
 
 // Entrega un archivo: menú de compartir en el teléfono, o descarga en el navegador.
 async function shareFile(name, text, type) {
@@ -417,7 +450,20 @@ function render(still = false) {
   screens[tab](view);
   view.scrollTop = still ? top : 0;
   for (const b of document.querySelectorAll('[data-tab]')) b.ariaCurrent = b.dataset.tab === tab ? 'page' : 'false';
+  movePill();
 }
+
+// La marca verde del menú se desliza hasta el apartado activo (la transición está en el CSS).
+function movePill() {
+  const pill = $('navpill'), b = document.querySelector(`[data-tab="${tab}"]`);
+  pill.style.opacity = b ? '1' : '0';
+  if (!b) return;
+  const first = !pill.dataset.ready;
+  if (first) pill.style.transition = 'none';
+  Object.assign(pill.style, { transform: `translateX(${b.offsetLeft}px)`, top: `${b.offsetTop}px`, width: `${b.offsetWidth}px`, height: `${b.offsetHeight}px` });
+  if (first) { void pill.offsetWidth; pill.style.transition = ''; pill.dataset.ready = '1'; }
+}
+addEventListener('resize', () => { const p = $('navpill'); delete p.dataset.ready; movePill(); });
 
 // Pasa de un apartado a otro: dir 1 = el nuevo está a la derecha, -1 = a la izquierda.
 function slide(dir, change) {
@@ -446,34 +492,112 @@ function slide(dir, change) {
 function go(next) {
   if (next === tab) return;
   const order = [...document.querySelectorAll('[data-tab]')].map((b) => b.dataset.tab).concat('settings');
-  slide(order.indexOf(next) > order.indexOf(tab) ? 1 : -1, () => {
-    tab = next;
-    picked = null;
-    if (next === 'reports') { month = L.today().slice(0, 7); chartEnd = null; }
-    shown = 0;
-  });
+  if (settling) return;
+  buzz();
+  slide(order.indexOf(next) > order.indexOf(tab) ? 1 : -1, () => { enter(next); shown = 0; });
 }
 
-// Deslizar el dedo: hacia la izquierda pasa al apartado de la derecha, y al revés.
-let touch = null;
-$('view').addEventListener('touchstart', (e) => {
-  // No cuenta si empieza en un campo o en una fila que se desplaza de lado (las cuentas).
-  const row = e.target.closest('.scroll');
-  const busy = e.touches.length > 1 || e.target.closest('input, select') || (row && row.scrollWidth > row.clientWidth);
-  touch = busy ? null : { x: e.touches[0].clientX, y: e.touches[0].clientY, at: Date.now() };
-}, { passive: true });
-$('view').addEventListener('touchcancel', () => { touch = null; }, { passive: true });
-$('view').addEventListener('touchend', (e) => {
-  if (!touch || !ready || window.locked || $('sheet').open) return;
-  const dx = e.changedTouches[0].clientX - touch.x, dy = e.changedTouches[0].clientY - touch.y;
-  const quick = Date.now() - touch.at < 700;
-  touch = null;
-  if (!quick || Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+// Deslizar el dedo: la pantalla lo sigue y la del apartado vecino viene pegada a ella.
+let drag = null, settling = false;
+
+function neighbor(dx) {
   const tabs = [...document.querySelectorAll('[data-tab]')].map((b) => b.dataset.tab);
-  if (tab === 'settings') { if (dx > 0) go('home'); return; }
-  const next = tabs[tabs.indexOf(tab) + (dx < 0 ? 1 : -1)];
-  if (next) go(next);
+  if (tab === 'settings') return dx > 0 ? 'home' : null;
+  return tabs[tabs.indexOf(tab) + (dx < 0 ? 1 : -1)] || null;
+}
+
+// Estado con el que se abre un apartado.
+function enter(name) {
+  tab = name;
+  picked = null;
+  if (name === 'reports') { month = L.today().slice(0, 7); chartEnd = null; }
+}
+
+// Dibuja el apartado vecino aparte, sin cambiar todavía de apartado.
+function preview(name) {
+  const keep = { tab, month, picked, chartEnd, shown };
+  const box = $('view').getBoundingClientRect();
+  const node = el('main', { className: 'still ghost', inert: true });
+  node.style.cssText = `top:${box.top}px;left:${box.left}px;width:${box.width}px;height:${box.height}px`;
+  enter(name);
+  instant = true;
+  screens[name](node);
+  instant = false;
+  ({ tab, month, picked, chartEnd, shown } = keep);
+  document.body.append(node);
+  return node;
+}
+
+function place(d, dx) {
+  const view = $('view');
+  // Sin apartado a ese lado la pantalla cede un poco y vuelve.
+  d.dx = d.next ? dx : dx * 0.2;
+  view.style.transform = `translateX(${d.dx}px)`;
+  if (d.node) d.node.style.transform = `translateX(${d.dx - Math.sign(d.side) * d.width}px)`;
+}
+
+// Termina el gesto: completa el cambio o devuelve la pantalla a su sitio.
+async function settle(d, change) {
+  settling = true;
+  const view = $('view'), end = change ? Math.sign(d.side) * d.width : 0;
+  const timing = { duration: Math.max(120, Math.min(300, Math.abs(end - d.dx) * 0.8)), easing: 'cubic-bezier(.2,.8,.3,1)', fill: 'forwards' };
+  const moves = [view.animate([{ transform: `translateX(${d.dx}px)` }, { transform: `translateX(${end}px)` }], timing)];
+  if (d.node) moves.push(d.node.animate([{ transform: `translateX(${d.dx - Math.sign(d.side) * d.width}px)` }, { transform: `translateX(${end - Math.sign(d.side) * d.width}px)` }], timing));
+  await Promise.race([Promise.all(moves.map((m) => m.finished)), new Promise((r) => setTimeout(r, 600))]).catch(() => {});
+  if (change) { buzz(); enter(d.next); shown = 0; instant = true; render(true); instant = false; view.scrollTop = 0; }
+  for (const m of moves) m.cancel();
+  view.style.transform = '';
+  d.node?.remove();
+  settling = false;
+}
+
+function dropDrag() {
+  const d = drag;
+  drag = null;
+  if (d?.active) settle(d, false);
+}
+
+$('view').addEventListener('touchstart', (e) => {
+  if (e.touches.length > 1) { dropDrag(); return; }
+  // No cuenta si empieza en un campo o en una fila que se desplaza de lado (las cuentas).
+  const row = e.target.closest('.scroll, .ranges');
+  const busy = settling || !ready || window.locked || $('sheet').open || e.target.closest('input, select') || (row && row.scrollWidth > row.clientWidth);
+  drag = busy ? null : { x: e.touches[0].clientX, y: e.touches[0].clientY, at: Date.now(), active: false, dx: 0 };
 }, { passive: true });
+
+$('view').addEventListener('touchmove', (e) => {
+  if (!drag) return;
+  const dx = e.touches[0].clientX - drag.x, dy = e.touches[0].clientY - drag.y;
+  if (!drag.active) {
+    if (Math.hypot(dx, dy) < 10) return;
+    if (Math.abs(dx) < Math.abs(dy) * 1.2) { drag = null; return; } // es un desplazamiento hacia arriba o abajo
+    drag.active = true;
+    drag.width = $('view').getBoundingClientRect().width;
+    for (const g of document.querySelectorAll('.ghost')) g.remove();
+    for (const a of $('view').getAnimations()) a.cancel();
+  }
+  if (calm()) { drag.dx = dx; return; } // sin animaciones: solo cambia al soltar
+  // Si el dedo cruza al otro lado, se prepara el otro vecino.
+  if (dx && Math.sign(dx) !== drag.side) {
+    drag.node?.remove();
+    drag.side = Math.sign(dx);
+    drag.next = neighbor(dx);
+    drag.node = drag.next ? preview(drag.next) : null;
+  }
+  place(drag, dx);
+}, { passive: true });
+
+$('view').addEventListener('touchend', (e) => {
+  const d = drag;
+  drag = null;
+  if (!d?.active) return;
+  const dx = e.changedTouches[0].clientX - d.x;
+  const flick = Math.abs(dx) > 50 && Date.now() - d.at < 300; // gesto corto y rápido
+  const far = Math.abs(dx) > d.width * 0.3;
+  if (calm()) { const next = neighbor(dx); if (next && (far || flick)) go(next); return; }
+  settle(d, Boolean(d.next) && Math.sign(dx) === d.side && (far || flick));
+}, { passive: true });
+$('view').addEventListener('touchcancel', dropDrag, { passive: true });
 
 $('add').onclick = () => moveForm();
 $('sheet').oncancel = (e) => { e.preventDefault(); closeSheet(); };

@@ -16,6 +16,7 @@
 <body>
 <main id="view"></main>
 <nav id="nav">
+  <span id="navpill" aria-hidden="true"></span>
   <button data-tab="home">Inicio</button>
   <button data-tab="moves">Historial</button>
   <button id="add" aria-label="Añadir movimiento">+</button>
@@ -23,6 +24,7 @@
   <button data-tab="plans">Planes</button>
 </nav>
 <dialog id="sheet">
+  <div class="grab" aria-hidden="true"></div>
   <form id="form" novalidate></form>
 </dialog>
 <input id="file" type="file" accept=".json,application/json" hidden>
@@ -35,6 +37,7 @@
 <script src="plans.js"></script>
 <script src="extras.js"></script>
 <script src="lock.js"></script>
+<script src="settings.js"></script>
 <script src="web.js"></script>
 </body>
 </html>

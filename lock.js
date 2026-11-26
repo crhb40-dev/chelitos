@@ -158,10 +158,3 @@ function removeLockForm() {
     },
   });
 }
-
-settingsSections.push((view) => view.append(section('Seguridad'),
-  ...(lockData ? [choice('Pedir el bloqueo', prefs.lockAfter, [[0, 'Al salir'], [60, '1 minuto'], [300, '5 minutos']], 'lockAfter')] : []),
-  el('div', {}, button(lockData ? (bioPlugin ? 'Cambiar PIN o huella' : 'Cambiar PIN') : `Activar bloqueo con PIN${bioPlugin ? ' o huella' : ''}`, lockForm),
-    lockData ? button('Quitar bloqueo', removeLockForm, 'wide neg') : null,
-    canFace && lockData ? button(lockData.face ? `Quitar ${FACE}` : `Usar ${FACE}`, lockData.face ? disableFace : enableFace) : null,
-    canFace && !lockData ? empty(`Activa primero un PIN para poder usar ${FACE}.`) : null)));

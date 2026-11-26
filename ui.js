@@ -28,6 +28,7 @@ function applyPrefs() {
   root.dataset.theme = prefs.theme;
   root.classList.toggle('calm', !prefs.motion);
 }
+const buzz = () => { if (plugins) try { navigator.vibrate?.(8); } catch { /* sin vibración */ } };
 const calm = () => !prefs.motion || matchMedia('(prefers-reduced-motion: reduce)').matches;
 async function savePrefs(change) {
   Object.assign(prefs, change);
@@ -40,6 +41,8 @@ const cap = (s) => s[0].toUpperCase() + s.slice(1);
 const toDate = (s) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d || 1); };
 const monthName = (m) => cap(toDate(m).toLocaleDateString('es', { month: 'long', year: 'numeric' }));
 const monthShort = (m) => cap(toDate(m).toLocaleDateString('es', { month: 'short' }).replace('.', ''));
+const longDay = (d) => d === L.today() ? 'Hoy' : d === L.today(new Date(Date.now() - 864e5)) ? 'Ayer'
+  : cap(toDate(d).toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long', ...(d.slice(0, 4) !== L.today().slice(0, 4) && { year: 'numeric' }) }));
 const dayName = (d) => d === L.today() ? 'Hoy' : toDate(d).toLocaleDateString('es', { day: 'numeric', month: 'short', ...(d.slice(0, 4) !== L.today().slice(0, 4) && { year: 'numeric' }) });
 
 const ICONS = {
@@ -65,6 +68,16 @@ const ICONS = {
   swap: 'M4 8h15l-4-4M20 16H5l4 4',
   eye: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 9a3 3 0 100 6 3 3 0 000-6z',
   eyeoff: 'M3 3l18 18M10 5.500C17 4 22 12 22 12a17 17 0 01-3 3.500M6 7a17 17 0 00-4 5s4 7 10 7a10 10 0 004-1',
+  plus: 'M12 5v14M5 12h14',
+  bell: 'M6 16V11a6 6 0 0112 0v5l2 2H4zM10 21h4',
+  lock: 'M6 11h12v10H6zM8 11V8a4 4 0 018 0v3',
+  face: 'M8 3H5a2 2 0 00-2 2v3M16 3h3a2 2 0 012 2v3M8 21H5a2 2 0 01-2-2v-3M16 21h3a2 2 0 002-2v-3M9 10h.01M15 10h.01M9.500 15a3.500 3.500 0 005 0',
+  upload: 'M12 16V4M7 9l5-5 5 5M5 20h14',
+  download: 'M12 4v12M7 11l5 5 5-5M5 20h14',
+  file: 'M6 3h9l4 4v14H6zM14 3v5h5M9 13h6M9 17h6',
+  help: 'M12 21a9 9 0 100-18 9 9 0 000 18zM9.500 9a2.500 2.500 0 015 0c0 2-2.500 2-2.500 4M12 17h.01',
+  sun: 'M12 8a4 4 0 100 8 4 4 0 000-8zM12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.500 1.500M17.500 17.500L19 19M19 5l-1.500 1.500M6.500 17.500L5 19',
+  filter: 'M3 5h18l-7 8v6l-4 2v-8z',
   list: 'M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01',
   chart: 'M4 20h16M7 20v-8M12 20V4M17 20v-12',
   target: 'M12 3a9 9 0 100 18 9 9 0 000-18zM12 8a4 4 0 100 8 4 4 0 000-8zM12 12h.01',
@@ -114,12 +127,12 @@ function toast(text, undo) {
   toastTimer = setTimeout(() => box.classList.remove('show', 'act'), undo ? 6000 : 3200);
 }
 
-let shown = 0;
+let shown = 0, instant = false; // instant: dibujar cifras sin contar
 function countUp(node, to) {
   const from = shown, start = performance.now();
   shown = to;
   node.textContent = money(from === to ? to : from);
-  if (from === to || calm()) { node.textContent = money(to); return; }
+  if (instant || from === to || calm()) { node.textContent = money(to); return; }
   const step = (now) => {
     const p = Math.min(1, (now - start) / 650);
     node.textContent = money(p === 1 ? to : Math.round((from + (to - from) * (1 - (1 - p) ** 3)) / 100) * 100);
@@ -129,15 +142,48 @@ function countUp(node, to) {
 }
 
 let closing = null;
-function closeSheet() {
+// from: cuántos px ya se arrastró hacia abajo (también llega un evento si se usa como onclick).
+function closeSheet(from = 0) {
   const d = $('sheet');
   if (!d.open) return Promise.resolve();
+  const dragged = typeof from === 'number' ? from : 0;
   closing ||= new Promise((done) => {
+    const end = () => { d.close(); d.classList.remove('closing'); d.style.transform = ''; closing = null; done(); };
+    if (dragged) {
+      const a = d.animate([{ transform: `translateY(${dragged}px)` }, { transform: 'translateY(100%)' }], { duration: 180, easing: 'ease-in', fill: 'forwards' });
+      setTimeout(() => { end(); a.cancel(); }, 180);
+      return;
+    }
     d.classList.add('closing');
-    setTimeout(() => { d.close(); d.classList.remove('closing'); closing = null; done(); }, 200);
+    setTimeout(end, 200);
   });
   return closing;
 }
+
+// Arrastrar la hoja desde arriba la cierra.
+(() => {
+  const d = $('sheet');
+  let start = null, dy = 0;
+  d.addEventListener('touchstart', (e) => {
+    const y = e.touches[0].clientY, fromTop = y - d.getBoundingClientRect().top;
+    start = d.scrollTop <= 0 && fromTop < 56 && !e.target.closest('input, select') ? y : null;
+    dy = 0;
+  }, { passive: true });
+  d.addEventListener('touchmove', (e) => {
+    if (start === null) return;
+    dy = Math.max(0, e.touches[0].clientY - start);
+    d.style.transform = `translateY(${dy}px)`;
+  }, { passive: true });
+  const finish = () => {
+    if (start === null) return;
+    start = null;
+    if (dy > 110) { closeSheet(dy); return; }
+    if (dy) d.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }], { duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    d.style.transform = '';
+  };
+  d.addEventListener('touchend', finish, { passive: true });
+  d.addEventListener('touchcancel', finish, { passive: true });
+})();
 
 /* Formulario único para toda la app.
    fields: {key, label, type: seg|money|keypad|text|date|select|chips|icons|colors|pin, options, show(values)}
