@@ -20,7 +20,7 @@
         cat('ingreso', 'Ingreso', 'in', 'cash', COLORS[5]), cat('sueldo', 'Sueldo', 'in', 'work', COLORS[0]),
         cat('venta', 'Venta', 'in', 'cart', COLORS[3]), cat('cobros', 'Cobros', 'in', 'card', COLORS[2]),
       ],
-      movements: [], goals: [], recurring: [], debts: [],
+      movements: [], goals: [], recurring: [], debts: [], favorites: [],
     };
   }
 
@@ -68,13 +68,14 @@
 
   // Datos guardados antes de tener otras monedas: todo era en pesos.
   function fill(d) {
+    d.favorites ??= []; // gastos frecuentes
     for (const k of ['accounts', 'goals', 'debts']) for (const x of d[k] || []) if (x) x.currency ??= 'peso';
     for (const c of d.categories || []) if (c) for (const k of Object.values(BUDGET)) c[k] ??= 0;
     return d;
   }
 
   function check(d) {
-    const lists = ['accounts', 'categories', 'movements', 'goals', 'recurring', 'debts'];
+    const lists = ['accounts', 'categories', 'movements', 'goals', 'recurring', 'debts', 'favorites'];
     if (d.app !== 'dinero' || d.version !== 2 || !lists.every((k) => Array.isArray(d[k]) &&
       d[k].every((x) => x && isText(x.id)) && new Set(d[k].map((x) => x.id)).size === d[k].length)) return false;
     const acc = new Set(d.accounts.map((a) => a.id));
@@ -92,6 +93,7 @@
       d.movements.every((x) => isDate(x.date) && isText(x.note) &&
         (x.debt === undefined || debts.get(x.debt)?.currency === curOf(d, x.account)) &&
         (x.type === 'transfer' ? transfer(x) : entry(x))) &&
+      d.favorites.every((f) => isText(f.name) && entry(f)) &&
       d.goals.every((g) => isText(g.name) && isCents(g.target) && isCents(g.saved, 0)) &&
       d.recurring.every((r) => isText(r.name) && entry(r) && ['week', 'half', 'month'].includes(r.freq) &&
         Number.isInteger(r.day) && isDate(r.next)) &&
@@ -142,6 +144,7 @@
       accounts: d.accounts.filter((a) => a.currency === currency),
       movements: d.movements.filter((x) => mine(x.account) || (x.type === 'transfer' && mine(x.to))),
       recurring: d.recurring.filter((x) => mine(x.account)),
+      favorites: d.favorites.filter((x) => mine(x.account)),
       goals: d.goals.filter((x) => x.currency === currency),
       debts: d.debts.filter((x) => x.currency === currency),
       categories: d.categories.map((c) => ({ ...c, budget: c[BUDGET[currency]] })),
@@ -213,14 +216,14 @@
   function removeCategory(d, id) {
     if (FIXED.includes(id)) throw new Error('Esa categoría no se puede borrar.');
     const other = d.categories.find((c) => c.id === id).type === 'in' ? 'ingreso' : 'otro';
-    for (const x of [...d.movements, ...d.recurring]) if (x.category === id) x.category = other;
+    for (const x of [...d.movements, ...d.recurring, ...d.favorites]) if (x.category === id) x.category = other;
     d.categories = d.categories.filter((c) => c.id !== id);
   }
 
   function removeAccount(d, id) {
     if (d.accounts.length === 1) throw new Error('Necesitas al menos una cuenta.');
-    if ([...d.movements, ...d.recurring].some((x) => x.account === id || x.to === id)) {
-      throw new Error('Esa cuenta tiene movimientos o pagos fijos. Cámbialos o bórralos primero.');
+    if ([...d.movements, ...d.recurring, ...d.favorites].some((x) => x.account === id || x.to === id)) {
+      throw new Error('Esa cuenta tiene movimientos, pagos fijos o frecuentes. Cámbialos o bórralos primero.');
     }
     d.accounts = d.accounts.filter((a) => a.id !== id);
   }
@@ -234,7 +237,7 @@
   }
 
   const ACCENTS = [['#C6F24E', 'Lima'], ['#7CC4FF', 'Azul'], ['#C4B0FF', 'Morado'], ['#FF9EC8', 'Rosa'], ['#FFB35C', 'Naranja']];
-  const BLOCKS = ['accounts', 'spending', 'budgets', 'upcoming', 'recent']; // secciones del inicio
+  const BLOCKS = ['today', 'favorites', 'total', 'accounts', 'spending', 'budgets', 'upcoming', 'recent']; // secciones del inicio
 
   // Preferencias de la persona. No van en la copia; si están dañadas se usan las de fábrica.
   function prefs(text) {
@@ -243,16 +246,102 @@
     p = p && typeof p === 'object' && !Array.isArray(p) ? p : {};
     const blocks = (list) => [...new Set(Array.isArray(list) ? list : [])].filter((b) => BLOCKS.includes(b));
     const order = blocks(p.order);
+    BLOCKS.forEach((b, i) => { if (!order.includes(b)) order.splice(i, 0, b); }); // las nuevas entran en su sitio
+    const shown = CURRENCIES.filter((c) => !Array.isArray(p.currencies) || p.currencies.includes(c));
+    const currencies = shown.length ? shown : CURRENCIES;
+    const rates = Object.fromEntries(Object.entries(p.rates || {}).filter(([k, v]) => (k === 'usd' || k === 'eur') && Number.isFinite(v) && v > 0 && v < 1e6));
     return {
+      name: typeof p.name === 'string' ? p.name.trim().slice(0, 20) : '',
+      theme: p.theme === 'light' ? 'light' : 'dark',
+      currencies, start: currencies.includes(p.start) ? p.start : currencies[0], rates,
+      size: [1, 1.15, 1.3].includes(p.size) ? p.size : 1,
+      motion: p.motion !== false,
+      lockAfter: [0, 60, 300].includes(p.lockAfter) ? p.lockAfter : 60,
+      lastBackup: isDate(p.lastBackup) ? p.lastBackup : '',
+      seen: p.seen === true,
       accent: ACCENTS.some(([c]) => c === p.accent) ? p.accent : ACCENTS[0][0],
       hidden: p.hidden === true,
-      order: [...order, ...BLOCKS.filter((b) => !order.includes(b))],
+      order,
       off: blocks(p.off),
       last: p.last && typeof p.last === 'object' ? p.last : {},
     };
   }
 
+  function calendar(d, month) {
+    const [y, mm] = parts(month);
+    const days = Array.from({ length: monthDays(month) }, (_, i) => ({ date: `${month}-${pad(i + 1)}`, income: 0, expense: 0 }));
+    for (const x of summary(d, month).items) {
+      const day = days[Number(x.date.slice(8)) - 1];
+      if (day && x.type === 'in') day.income += x.amount;
+      else if (day && x.type === 'out') day.expense += x.amount;
+    }
+    return { offset: (new Date(y, mm - 1, 1).getDay() + 6) % 7, days };
+  }
+
+  // Gastos de este mes hasta hoy frente a los mismos días del mes anterior.
+  function compare(d, now) {
+    const month = now.slice(0, 7), previous = shiftMonth(month, -1), day = Number(now.slice(8));
+    const upTo = (m) => {
+      const last = Math.min(day, monthDays(m));
+      // Si hoy es fin de mes, se compara con el mes anterior completo.
+      const limit = day === monthDays(month) ? monthDays(m) : last;
+      return summary({ ...d, movements: d.movements.filter((x) => Number(x.date.slice(8)) <= limit) }, m);
+    };
+    const a = upTo(month), b = upTo(previous), old = Object.fromEntries(b.byCategory);
+    const rises = a.byCategory.map(([id, v]) => [id, v - (old[id] || 0)]).filter((x) => x[1] > 0).sort((x, y) => y[1] - x[1]);
+    return { now: a.expense, before: b.expense, top: rises[0] || null };
+  }
+
+  // Lo que queda hoy repartiendo los límites del mes entre los días que faltan. null = sin límites.
+  function dailyAllowance(d, now) {
+    const month = now.slice(0, 7), limits = d.categories.filter((c) => c.type === 'out' && c.budget > 0);
+    if (!limits.length) return null;
+    let free = 0, spentToday = 0;
+    for (const c of limits) {
+      let before = 0;
+      for (const x of d.movements) {
+        if (x.type !== 'out' || x.category !== c.id || !x.date.startsWith(month)) continue;
+        if (x.date === now) spentToday += x.amount; else if (x.date < now) before += x.amount;
+      }
+      free += Math.max(0, c.budget - before);
+    }
+    const left = monthDays(month) - Number(now.slice(8)) + 1;
+    return Math.max(0, Math.floor(free / left) - spentToday);
+  }
+
+  // rates: cuántos pesos vale 1 unidad. Las monedas con saldo y sin tasa quedan fuera y se avisan.
+  function totalPesos(d, rates) {
+    let total = balances(d, 'peso').total;
+    const missing = [];
+    for (const c of ['usd', 'eur']) {
+      const value = balances(d, c).total;
+      if (!value) continue;
+      if (rates[c]) total += Math.round(value * rates[c]); else missing.push(c);
+    }
+    return { total, missing };
+  }
+
+  const daysBetween = (a, b) => Math.round((Date.UTC(...ymd(b)) - Date.UTC(...ymd(a))) / 864e5);
+  const ymd = (s) => { const [y, m, d] = parts(s); return [y, m - 1, d]; };
+  function reminders(d, lastBackup, now) {
+    const last = d.movements.reduce((max, x) => (x.date > max && x.date <= now ? x.date : max), '');
+    const idle = last ? daysBetween(last, now) : 0;
+    return { backup: d.movements.length >= 5 && (!lastBackup || daysBetween(lastBackup, now) >= 14), idle: idle >= 3 ? idle : 0 };
+  }
+
+  function csv(d) {
+    const name = (list, id) => list.find((x) => x.id === id)?.name || '';
+    // El apóstrofo evita que Excel ejecute como fórmula un texto escrito por la persona.
+    const text = (s) => `"${(/^[=+\-@\t\r]/.test(s) ? "'" + s : s).replace(/"/g, '""')}"`;
+    const num = (c) => (c / 100).toFixed(2);
+    const TYPES = { in: 'Entrada', out: 'Gasto', transfer: 'Transferencia' };
+    const rows = [...d.movements].sort(newest).map((x) => [x.date, TYPES[x.type], text(name(d.categories, x.category)), text(x.note),
+      text(name(d.accounts, x.account)), curOf(d, x.account), num(x.amount), x.to ? text(name(d.accounts, x.to)) : '', x.received ? num(x.received) : ''].join(','));
+    return '\ufeff' + ['Fecha,Tipo,Categoría,Nota,Cuenta,Moneda,Monto,Hacia,Recibido', ...rows].join('\r\n');
+  }
+
   const api = {
+    calendar, compare, dailyAllowance, totalPesos, reminders, csv,
     keypad, ACCENTS, BLOCKS, prefs,
     COLORS, FIXED, defaultData, parseAmount, today, shiftMonth, nextDate, load, balances, summary,
     BUDGET, view, curOf, spentByKind, windowEnd, lastMonths, search, budgets, debtPaid, payRecurring, removeCategory, removeAccount,

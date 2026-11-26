@@ -104,10 +104,15 @@ window.gate = async () => {
   if (saved) { lockData = JSON.parse(saved); lockNow(); }
 };
 
-// Vuelve a bloquear si la app estuvo más de un minuto en segundo plano.
+// Vuelve a bloquear según lo elegido: al salir, o tras 1 o 5 minutos fuera.
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) hiddenAt = Date.now();
-  else if (hiddenAt && Date.now() - hiddenAt > 60000) lockNow();
+  else {
+    // Si salió desde la propia app (compartir, foto, elegir archivo) se da un minuto.
+    const grace = window.skipLock ? Math.max(prefs.lockAfter, 60) : prefs.lockAfter;
+    window.skipLock = false;
+    if (hiddenAt && Date.now() - hiddenAt >= grace * 1000) lockNow();
+  }
 });
 
 async function lockForm() {
@@ -146,6 +151,7 @@ async function lockForm() {
 }
 
 settingsSections.push((view) => view.append(section('Seguridad'),
+  ...(lockData ? [choice('Pedir el bloqueo', prefs.lockAfter, [[0, 'Al salir'], [60, '1 minuto'], [300, '5 minutos']], 'lockAfter')] : []),
   el('div', {}, button(lockData ? 'Cambiar o quitar el bloqueo' : `Activar bloqueo con PIN${bioPlugin ? ' o huella' : ''}`, lockForm),
     canFace && lockData ? button(lockData.face ? `Quitar ${FACE}` : `Usar ${FACE}`, lockData.face ? disableFace : enableFace) : null,
     canFace && !lockData ? empty(`Activa primero un PIN para poder usar ${FACE}.`) : null)));

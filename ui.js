@@ -21,7 +21,14 @@ const CUR = { peso: ['Pesos', '$'], usd: ['Dólares', 'US$'], eur: ['Euros', '�
 let cur = 'peso'; // apartado que se está viendo
 const symbol = (k = cur) => CUR[k][1];
 let prefs = L.prefs(null);
-function applyPrefs() { document.documentElement.style.setProperty('--lime', prefs.accent); }
+function applyPrefs() {
+  const root = document.documentElement;
+  root.style.setProperty('--lime', prefs.accent);
+  root.style.setProperty('--zoom', prefs.size);
+  root.dataset.theme = prefs.theme;
+  root.classList.toggle('calm', !prefs.motion);
+}
+const calm = () => !prefs.motion || matchMedia('(prefers-reduced-motion: reduce)').matches;
 async function savePrefs(change) {
   Object.assign(prefs, change);
   applyPrefs();
@@ -112,7 +119,7 @@ function countUp(node, to) {
   const from = shown, start = performance.now();
   shown = to;
   node.textContent = money(from === to ? to : from);
-  if (from === to || matchMedia('(prefers-reduced-motion: reduce)').matches) { node.textContent = money(to); return; }
+  if (from === to || calm()) { node.textContent = money(to); return; }
   const step = (now) => {
     const p = Math.min(1, (now - start) / 650);
     node.textContent = money(p === 1 ? to : Math.round((from + (to - from) * (1 - (1 - p) ** 3)) / 100) * 100);
@@ -137,7 +144,7 @@ function closeSheet() {
    more: true esconde el campo tras "Más opciones" (salvo que always(values)). submit: true en chips guarda al tocar.
    options puede ser una lista [[valor, texto, icono, color]] o una función(values).
    onSave(values) devuelve un texto de error, o nada si todo salió bien. */
-function openForm({ title, fields, values = {}, save = 'Guardar', onSave, onDelete, deleteText = 'Borrar', actions = [], showSave, moreLabel }) {
+function openForm({ title, text = [], fields, values = {}, save = 'Guardar', onSave, onDelete, deleteText = 'Borrar', actions = [], showSave, moreLabel }) {
   if ($('sheet').open) return;
   const form = $('form'), v = { ...values }, parts = [];
   const error = el('p', { className: 'error', role: 'alert' });
@@ -240,7 +247,7 @@ function openForm({ title, fields, values = {}, save = 'Guardar', onSave, onDele
   };
   $('sheet').ariaLabel = title;
   $('sheet').classList.toggle('fast', Boolean(showSave));
-  form.replaceChildren(el('h2', { textContent: title }), ...nodes, error, primary,
+  form.replaceChildren(el('h2', { textContent: title }), ...text.map((t) => el('p', { className: 'tip', textContent: t })), ...nodes, error, primary,
     ...actions.map(([text, run]) => button(text, async () => { await closeSheet(); run(); })),
     ...(del ? [del] : []), button('Cancelar', closeSheet, ''));
   draw();

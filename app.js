@@ -6,6 +6,9 @@ const filters = { text: '', category: '', account: '', from: '', to: '' };
 const screens = {};           // nombre -> función(view)
 const homeBlocks = {};        // secciones del inicio: id -> [nombre, función(view, datos)]
 const settingsSections = [];  // bloques extra de ajustes
+const homeNotices = [];       // avisos arriba del inicio
+const reportSections = [];    // bloques extra de reportes: función(view, datos)
+const moveActions = [];       // botones extra al editar un movimiento: función(movimiento) -> [texto, acción]
 
 const account = (id) => data.accounts.find((a) => a.id === id);
 const category = (id) => data.categories.find((c) => c.id === id);
@@ -16,7 +19,7 @@ const curOf = (id) => L.curOf(data, id);
 const accountOptions = (k) => data.accounts.filter((a) => !k || a.currency === k)
   .map((a) => [a.id, !k && a.currency !== 'peso' ? `${a.name} (${symbol(a.currency)})` : a.name]);
 const curSwitch = () => el('div', { className: 'seg cur', role: 'group', ariaLabel: 'Moneda' },
-  ...Object.entries(CUR).map(([k, [name]]) => el('button', { textContent: name, ariaPressed: String(k === cur),
+  ...Object.entries(CUR).filter(([k]) => prefs.currencies.includes(k) || k === cur).map(([k, [name]]) => el('button', { textContent: name, ariaPressed: String(k === cur),
     onclick: () => {
       const order = Object.keys(CUR);
       if (k !== cur) slide(order.indexOf(k) > order.indexOf(cur) ? 1 : -1, () => { cur = k; picked = null; shown = 0; });
@@ -73,6 +76,7 @@ function moveForm(x, preset = {}) {
   const isType = (...t) => (v) => t.includes(v.type);
   openForm({
     title: x ? 'Editar movimiento' : 'Anotar',
+    actions: x ? moveActions.map((make) => make(x)).filter(Boolean) : [],
     showSave: quick ? isType('transfer') : undefined,
     moreLabel: (v) => `${account(v.account)?.name || KIND[v.method]?.[0] || ''} · ${v.date ? dayName(v.date) : 'sin fecha'}`,
     values: x ? { ...x, method: account(x.account).kind, amount: asInput(x.amount), received: asInput(x.received) }
@@ -147,7 +151,7 @@ screens.home = (view) => {
   const eye = el('button', { className: 'icon-btn', ariaLabel: prefs.hidden ? 'Mostrar saldos' : 'Ocultar saldos', ariaPressed: String(prefs.hidden),
     onclick: async () => { await savePrefs({ hidden: !prefs.hidden }); render(true); } }, icon(prefs.hidden ? 'eyeoff' : 'eye'));
   view.append(
-    el('div', { className: 'head' }, el('h1', { textContent: 'Mi dinero' }), el('div', { className: 'tools' }, eye,
+    el('div', { className: 'head' }, el('h1', { textContent: prefs.name ? `Hola, ${prefs.name}` : 'Mi dinero' }), el('div', { className: 'tools' }, eye,
       el('button', { className: 'icon-btn', ariaLabel: 'Ajustes', onclick: () => go('settings') }, icon('gear')))),
     curSwitch(),
     el('div', { className: 'card hero' }, el('div', { className: 'dim', textContent: `Saldo total en ${CUR[cur][0].toLowerCase()}` }), big,
@@ -158,6 +162,7 @@ screens.home = (view) => {
     el('div', { className: 'actions' }, button('− Gasté', () => moveForm(null, { type: 'out' }), 'spend'),
       button('+ Me entró', () => moveForm(null, { type: 'in' }), 'earn')));
   countUp(big, b.total);
+  for (const notice of homeNotices) notice(view);
   for (const id of prefs.order) if (!prefs.off.includes(id)) homeBlocks[id]?.[1](view, { here, s, b });
 };
 
@@ -259,7 +264,9 @@ screens.reports = (view) => {
     el('div', { className: 'card' }, el('div', { className: 'duo' },
       el('div', {}, 'Entró', el('b', { textContent: money(s.income) })),
       el('div', {}, 'Salió', el('b', { textContent: money(s.expense) }))),
-      el('p', { className: 'dim', textContent: `Te quedó ${money(s.income - s.expense)} este mes` })),
+      el('p', { className: 'dim', textContent: `Te quedó ${money(s.income - s.expense)} este mes` })));
+  for (const add of reportSections) add(view, { here });
+  view.append(
     ...(s.expense ? [section('Con qué pagaste'), el('div', { className: 'card' }, ...L.spentByKind(here, month).map(([k, v]) =>
       el('div', {}, line({ lead: badge(KIND[k][1], KIND[k][2]), title: KIND[k][0], sub: `${Math.round(v * 100 / s.expense)}% de tus gastos`, value: money(v) }), track(v / s.expense, KIND[k][2]))))] : []),
     section('Gastos por categoría'),
@@ -289,8 +296,8 @@ function accountForm(a) {
       const initial = L.parseAmount(v.initial, { zero: true, negative: true });
       if (!v.name.trim()) return 'Ponle un nombre.';
       if (initial === null) return 'Revisa el saldo. Usa punto para los centavos.';
-      if (a && v.currency !== a.currency && [...data.movements, ...data.recurring].some((x) => x.account === a.id || x.to === a.id)) {
-        return 'No se puede cambiar la moneda de una cuenta con movimientos o pagos fijos. Crea otra cuenta.';
+      if (a && v.currency !== a.currency && [...data.movements, ...data.recurring, ...data.favorites].some((x) => x.account === a.id || x.to === a.id)) {
+        return 'No se puede cambiar la moneda de una cuenta con movimientos, pagos fijos o frecuentes. Crea otra cuenta.';
       }
       const before = cur;
       cur = v.currency;
@@ -348,25 +355,35 @@ screens.settings = (view) => {
   view.append(section('Categorías', '+ Nueva', () => categoryForm()),
     el('div', { className: 'card' }, ...data.categories.map((c) => line({ lead: badge(c.icon, c.color), title: c.name, sub: c.type === 'in' ? 'Entradas' : 'Gastos', onclick: () => categoryForm(c) }))),
     section('Copia de seguridad'),
-    el('div', {}, button('Guardar copia', exportBackup), button('Recuperar copia', () => $('file').click())));
+    el('div', {}, button('Guardar copia', exportBackup), button('Recuperar copia', () => { window.skipLock = true; $('file').click(); }),
+      button('Exportar a Excel (CSV)', () => shareFile(`dinero-${L.today()}.csv`, L.csv(data), 'text/csv'))),
+    el('p', { className: 'dim', textContent: 'Las fotos de recibos no van en la copia.' }));
 };
 
-async function exportBackup() {
-  const name = `dinero-${L.today()}.json`, text = JSON.stringify(data);
+// Entrega un archivo: menú de compartir en el teléfono, o descarga en el navegador.
+async function shareFile(name, text, type) {
+  window.skipLock = true; // salir a compartir no debe bloquear al instante
   if (!plugins) {
-    const file = new File([text], name, { type: 'application/json' });
+    const file = new File([text], name, { type });
     if (navigator.canShare?.({ files: [file] })) {
-      try { await navigator.share({ files: [file] }); return; } catch (e) { if (e.name === 'AbortError') return; }
+      try { await navigator.share({ files: [file] }); return true; } catch (e) { if (e.name === 'AbortError') return false; }
     }
     el('a', { href: URL.createObjectURL(file), download: name }).click();
-    return;
+    return true;
   }
   try {
     const { uri } = await plugins.Filesystem.writeFile({ path: name, data: text, directory: 'CACHE', encoding: 'utf8' });
     await plugins.Share.share({ title: name, files: [uri] });
+    return true;
   } catch (e) {
-    if (!/cancel/i.test(e.message)) toast('No se pudo guardar la copia.');
+    if (!/cancel/i.test(e.message)) toast('No se pudo guardar el archivo.');
+    return false;
   }
+}
+async function exportBackup() {
+  if (!await shareFile(`dinero-${L.today()}.json`, JSON.stringify(data), 'application/json')) return;
+  await savePrefs({ lastBackup: L.today() });
+  render(true);
 }
 
 $('file').onchange = async () => {
@@ -407,7 +424,7 @@ function slide(dir, change) {
   change();
   render();
   view.scrollTop = 0;
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (calm()) return;
   view.classList.add('sliding');
   document.body.append(ghost);
   ghost.scrollTop = top;
@@ -475,9 +492,11 @@ async function start() {
     }
     prefs = L.prefs(await store.get('prefs'));
     applyPrefs();
+    cur = prefs.start;
     await window.gate?.(); // bloquea antes de mostrar nada
     ready = true;
     render();
+    window.afterStart?.();
   } catch (e) {
     // No tocar datos ilegibles: se bloquea la app para no sobrescribirlos.
     console.error(e);

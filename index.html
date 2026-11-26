@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
 <title>Dinero</title>
 <meta name="theme-color" content="#0E1013">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -26,11 +26,14 @@
   <form id="form" novalidate></form>
 </dialog>
 <input id="file" type="file" accept=".json,application/json" hidden>
+<input id="photo" type="file" accept="image/*" hidden>
+<dialog id="viewer" aria-label="Foto del recibo"></dialog>
 <div id="toast" role="status"></div>
 <script src="logic.js"></script>
 <script src="ui.js"></script>
 <script src="app.js"></script>
 <script src="plans.js"></script>
+<script src="extras.js"></script>
 <script src="lock.js"></script>
 <script src="web.js"></script>
 </body>
