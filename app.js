@@ -196,7 +196,7 @@ screens.home = (view) => {
   const eye = el('button', { className: 'icon-btn', ariaLabel: prefs.hidden ? 'Mostrar saldos' : 'Ocultar saldos', ariaPressed: String(prefs.hidden),
     onclick: async () => { await savePrefs({ hidden: !prefs.hidden }); render(true); window.syncNotices?.(); } }, icon(prefs.hidden ? 'eyeoff' : 'eye'));
   view.append(
-    el('div', { className: 'head' }, el('h1', { textContent: prefs.name ? `Hola, ${prefs.name}` : 'Mi dinero' }), el('div', { className: 'tools' }, eye,
+    el('div', { className: 'head' }, el('h1', { textContent: prefs.name ? `Hola, ${prefs.name}` : 'Chelitos' }), el('div', { className: 'tools' }, eye,
       el('button', { className: 'icon-btn', ariaLabel: 'Ajustes', onclick: () => go('settings') }, icon('gear')))),
     curSwitch(),
     el('div', { className: 'card hero' }, el('div', { className: 'dim', textContent: `Saldo total en ${CUR[cur][0].toLowerCase()}` }), big,
@@ -426,7 +426,7 @@ async function shareFile(name, text, type) {
   }
 }
 async function exportBackup() {
-  if (!await shareFile(`dinero-${L.today()}.json`, JSON.stringify(data), 'application/json')) return;
+  if (!await shareFile(`chelitos-${L.today()}.json`, JSON.stringify(data), 'application/json')) return;
   await savePrefs({ lastBackup: L.today() });
   render(true);
 }
@@ -652,7 +652,7 @@ async function start() {
     const raw = await store.get(KEY).catch(() => null);
     $('view').replaceChildren(empty('No pude leer tus datos guardados. No se borró nada.'),
       button('Recuperar una copia', () => { window.skipLock = true; $('file').click(); }),
-      raw ? button('Guardar los datos dañados para revisarlos', () => shareFile('dinero-danado.txt', raw, 'text/plain')) : null);
+      raw ? button('Guardar los datos dañados para revisarlos', () => shareFile('chelitos-danado.txt', raw, 'text/plain')) : null);
   }
 }
 // Espera a que carguen todas las partes antes de dibujar.

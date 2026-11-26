@@ -111,9 +111,9 @@ screens.settings = (view) => {
     ...group('Tus datos',
       chevron({ lead: badge('download', '#199e70'), title: 'Guardar copia', sub: prefs.lastBackup ? `Última: ${dayName(prefs.lastBackup)}` : 'Todavía no has guardado una', onclick: exportBackup }),
       chevron({ lead: badge('upload', '#3987e5'), title: 'Recuperar copia', sub: 'Reemplaza lo que hay ahora', onclick: () => { window.skipLock = true; $('file').click(); } }),
-      chevron({ lead: badge('file', '#c98500'), title: 'Exportar a Excel (CSV)', onclick: () => shareFile(`dinero-${L.today()}.csv`, L.csv(data), 'text/csv') })),
+      chevron({ lead: badge('file', '#c98500'), title: 'Exportar a Excel (CSV)', onclick: () => shareFile(`chelitos-${L.today()}.csv`, L.csv(data), 'text/csv') })),
     el('p', { className: 'dim note', textContent: 'Las fotos de recibos no van en la copia.' }),
 
     ...group('Ayuda', chevron({ lead: badge('help', '#9085e9'), title: 'Ver la guía', onclick: guide })),
-    el('p', { className: 'dim foot', textContent: 'Dinero · tus datos se guardan solo en este teléfono' }));
+    el('p', { className: 'dim foot', textContent: 'Chelitos · tus datos se guardan solo en este teléfono' }));
 };

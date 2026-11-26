@@ -1,4 +1,4 @@
-# Dinero
+# Chelitos
 
 App para llevar tu dinero en el teléfono: lo que entra, lo que sale y lo que quieres ahorrar. Funciona sin internet, sin cuentas ni anuncios, y **tus datos se quedan en tu teléfono**.
 
@@ -6,8 +6,8 @@ App para llevar tu dinero en el teléfono: lo que entra, lo que sale y lo que qu
 
 | Teléfono | Cómo |
 |---|---|
-| **Android** (8 o más nuevo) | **[Descargar el APK](https://github.com/crhb40-dev/mi-dinero/releases/latest/download/Dinero.apk)** |
-| **iPhone** (iOS 16.2 o más nuevo) | Abre **[la app web](https://crhb40-dev.github.io/mi-dinero/)** en Safari |
+| **Android** (8 o más nuevo) | **[Descargar el APK](https://github.com/crhb40-dev/chelitos/releases/latest/download/Chelitos.apk)** |
+| **iPhone** (iOS 16.2 o más nuevo) | Abre **[la app web](https://crhb40-dev.github.io/chelitos/)** en Safari |
 
 ### Instalar en Android
 1. Descarga el APK y ábrelo.
@@ -15,7 +15,7 @@ App para llevar tu dinero en el teléfono: lo que entra, lo que sale y lo que qu
 3. En Samsung, si el **Bloqueador automático** lo impide, está en Ajustes › Seguridad y privacidad. Si lo desactivas, vuelve a activarlo después.
 
 ### Instalar en iPhone
-1. Abre en **Safari** `https://crhb40-dev.github.io/mi-dinero/`.
+1. Abre en **Safari** `https://crhb40-dev.github.io/chelitos/`.
 2. Toca **Compartir** (si no lo ves, está en el botón `•••`).
 3. Toca **Añadir a pantalla de inicio** y luego **Añadir**.
 4. Ábrela desde su icono. La primera vez, con internet.
@@ -46,6 +46,6 @@ App para llevar tu dinero en el teléfono: lo que entra, lo que sale y lo que qu
 - La versión para iPhone se ha probado en un navegador con el motor de Safari, no en todos los modelos de iPhone.
 
 ## Cómo está hecha
-HTML, CSS y JavaScript sin frameworks. En Android se empaqueta con [Capacitor](https://capacitorjs.com/); en iPhone es una aplicación web instalable. Este repositorio contiene la app web; el APK está en [Releases](https://github.com/crhb40-dev/mi-dinero/releases).
+HTML, CSS y JavaScript sin frameworks. En Android se empaqueta con [Capacitor](https://capacitorjs.com/); en iPhone es una aplicación web instalable. Este repositorio contiene la app web; el APK está en [Releases](https://github.com/crhb40-dev/chelitos/releases).
 
 Tipografía [Space Grotesk](fonts/LICENSE), bajo licencia SIL Open Font License.

@@ -201,7 +201,7 @@ async function setNotify(change) {
     try {
       let state = (await notifier.checkPermissions()).display;
       if (state !== 'granted') { window.skipLock = true; state = (await notifier.requestPermissions()).display; }
-      if (state !== 'granted') { toast('Sin permiso. Actívalo en Ajustes del teléfono, en Notificaciones de Dinero.'); return; }
+      if (state !== 'granted') { toast('Sin permiso. Actívalo en Ajustes del teléfono, en Notificaciones de Chelitos.'); return; }
     } catch (e) { console.warn(e.message); toast('No se pudo activar.'); return; }
   }
   await savePrefs({ notify: { ...prefs.notify, ...change } });
@@ -220,7 +220,7 @@ function timeForm() {
 
 /* ---------- Personalización ---------- */
 function nameForm() {
-  openForm({ title: 'Tu nombre', values: { name: prefs.name }, fields: [{ key: 'name', label: 'Nombre para el inicio (vacío = Mi dinero)', type: 'text' }],
+  openForm({ title: 'Tu nombre', values: { name: prefs.name }, fields: [{ key: 'name', label: 'Nombre para el inicio (vacío = Chelitos)', type: 'text' }],
     onSave: async (v) => { await savePrefs({ name: v.name.trim().slice(0, 20) }); render(true); } });
 }
 function ratesForm() {

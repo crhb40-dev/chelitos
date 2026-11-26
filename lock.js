@@ -12,7 +12,7 @@ const toBytes = (text) => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
 async function enableFace() {
   try {
     const key = await navigator.credentials.create({ publicKey: {
-      challenge: random(32), rp: { name: 'Dinero' }, user: { id: random(16), name: 'Dinero', displayName: 'Dinero' },
+      challenge: random(32), rp: { name: 'Chelitos' }, user: { id: random(16), name: 'Chelitos', displayName: 'Chelitos' },
       pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
       authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' }, timeout: 60000,
     } });
@@ -73,7 +73,7 @@ async function fingerprint() {
   if (asking || !window.locked) return;
   asking = true;
   try {
-    await bioPlugin.internalAuthenticate({ androidTitle: 'Desbloquear Dinero', cancelTitle: 'Usar PIN', allowDeviceCredential: false });
+    await bioPlugin.internalAuthenticate({ androidTitle: 'Desbloquear Chelitos', cancelTitle: 'Usar PIN', allowDeviceCredential: false });
     unlock();
   } catch (e) { console.warn(e.message); }
   asking = false;
@@ -91,7 +91,7 @@ function lockNow() {
     e.preventDefault();
     const problem = await tryPin(input.value);
     if (problem) { error.textContent = problem; input.value = ''; } else unlock();
-  } }, badge('home', '#C6F24E'), el('h2', { textContent: 'Dinero está bloqueado' }), input, error,
+  } }, badge('home', '#C6F24E'), el('h2', { textContent: 'Chelitos está bloqueado' }), input, error,
     el('button', { className: 'primary', textContent: 'Desbloquear' }),
     lockData.bio && bioPlugin ? button('Usar huella', fingerprint) : null,
     lockData.face && canFace ? button(`Desbloquear con ${FACE}`, () => faceUnlock(error)) : null);

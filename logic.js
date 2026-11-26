@@ -347,7 +347,7 @@
     const plan = [];
     if (p.notify.daily) {
       const [hour, minute] = p.notify.time.split(':').map(Number);
-      plan.push({ id: 1, title: 'Dinero', body: '¿Anotaste lo de hoy?', on: { hour, minute } });
+      plan.push({ id: 1, title: 'Chelitos', body: '¿Anotaste lo de hoy?', on: { hour, minute } });
     }
     if (!p.notify.payments) return plan;
     const limit = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 62);
