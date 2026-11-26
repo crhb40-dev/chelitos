@@ -48,6 +48,23 @@ function switchCurrency(k) {
 }
 const categoryOptions = (type) => data.categories.filter((c) => c.type === type).map((c) => [c.id, c.name, c.icon, c.color]);
 const subsOf = (id) => category(id)?.subs || [];
+// Icono de las subcategorías de fábrica; las demás usan el de su categoría.
+const SUB_ICONS = Object.fromEntries(Object.entries({
+  casa: 'key sofa broom wrench',
+  comida: 'cart food moto icecream',
+  transporte: 'fuel bus taxi toolbox',
+  servicios: 'bulb drop wifi phone',
+  ropa: 'shirt shoe watch',
+  salud: 'pill doctor dumbbell',
+  ocio: 'glass tv game plane',
+}).flatMap(([c, names]) => names.split(' ').map((name, i) => [`${c}-${i + 1}`, name])));
+// Al anotar: una lista de subcategorías ocupa el lugar de la cuadrícula.
+function subGrid(show) {
+  const open = (v) => show(v) && v.opened === v.category && category(v.category)?.type === v.type && subsOf(v.category).length > 0;
+  return { key: 'sub', type: 'list', submit: true, label: (v) => `‹ ${category(v.category)?.name || ''}`,
+    back: (v) => { v.opened = null; }, show: open,
+    options: (v) => { const c = category(v.category); return [...subsOf(v.category).map((s) => [s.id, s.name, SUB_ICONS[s.id] || c.icon, c.color]), ['', 'General', 'dots', c?.color]]; } };
+}
 // Fila de subcategorías: solo aparece si la categoría elegida tiene.
 const subField = (extra = {}) => ({ key: 'sub', label: 'Subcategoría', type: 'pills',
   options: (v) => [['', 'General'], ...subsOf(v.category).map((s) => [s.id, s.name])],
@@ -123,10 +140,11 @@ function moveForm(x, preset = {}) {
       const forTransfer = quick && { more: true, always: isType('transfer') };
       const category = { key: 'category', label: quick ? 'Toca una categoría para guardar' : 'Categoría', type: 'chips', submit: quick,
         // Al anotar, si la categoría tiene subcategorías, se guarda al tocar una de ellas.
-        wait: quick ? (v) => { v.opened = subsOf(v.category).length > 0; return v.opened; } : undefined,
-        options: (v) => categoryOptions(v.type === 'in' ? 'in' : 'out'), show: (v) => !linked && isType('in', 'out')(v) };
-      const sub = subField({ label: quick ? 'Toca una subcategoría para guardar' : 'Subcategoría', submit: quick,
-        show: (v) => category.show(v) && (!quick || v.opened) && subsOf(v.category).length > 0 });
+        wait: quick ? (v) => { v.opened = subsOf(v.category).length ? v.category : null; return Boolean(v.opened); } : undefined,
+        options: (v) => categoryOptions(v.type === 'in' ? 'in' : 'out') };
+      const usable = (v) => !linked && isType('in', 'out')(v);
+      const sub = quick ? subGrid(usable) : subField({ show: (v) => usable(v) && subsOf(v.category).length > 0 });
+      category.show = (v) => usable(v) && !(quick && sub.show(v));
       return [
         { key: 'type', label: 'Tipo', type: 'seg', options: [['out', 'Gasto'], ['in', 'Entrada'], ['transfer', 'Transferir']], show: () => !linked },
         { key: 'amount', label: (v) => `Monto (${symbol(curOf(v.account) || home)})`, type: 'money' },

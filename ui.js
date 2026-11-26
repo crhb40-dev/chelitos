@@ -85,6 +85,26 @@ const ICONS = {
   list: 'M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01',
   chart: 'M4 20h16M7 20v-8M12 20V4M17 20v-12',
   target: 'M12 3a9 9 0 100 18 9 9 0 000-18zM12 8a4 4 0 100 8 4 4 0 000-8zM12 12h.01',
+  key: 'M8 11a4 4 0 100 8 4 4 0 000-8zM11 12l9-9M17 6l3 3M14 9l2 2',
+  sofa: 'M5 11V7a2 2 0 012-2h10a2 2 0 012 2v4M5 11a2 2 0 00-2 2v5h18v-5a2 2 0 00-4 0v1H7v-1a2 2 0 00-2-2zM5 18v2M19 18v2',
+  broom: 'M19 3l-7 7M9 9l6 6M9 9l-6 7 5 5 7-6M7 15l3 3',
+  wrench: 'M15 3a6 6 0 00-5.700 7.800L3.500 16.600a2.100 2.100 0 003 3l5.800-5.800A6 6 0 0020 6.500L16.500 10 14 7.500 17.500 4A6 6 0 0015 3z',
+  moto: 'M6 14a3 3 0 100 6 3 3 0 000-6zM18 14a3 3 0 100 6 3 3 0 000-6zM9 17h5l3-6M14 6h3l1 8M4 11h6l3 4M3 5h6v4H3z',
+  icecream: 'M7 10a5 5 0 0110 0zM7 10l5 11 5-11',
+  fuel: 'M5 21V5a2 2 0 012-2h5a2 2 0 012 2v16M3 21h13M5 10h9M14 8h3a2 2 0 012 2v7a1.500 1.500 0 003 0V9l-3-3',
+  bus: 'M5 5a2 2 0 012-2h10a2 2 0 012 2v12H5zM5 11h14M8 14h.01M16 14h.01M7 17v3M17 17v3',
+  taxi: 'M4 18v-4l2-5h12l2 5v4zM4 14h16M7 18v2M17 18v2M9 9V5h6v4',
+  toolbox: 'M3 9h18v11H3zM8 9V5h8v4M3 14h18M10 12v4M14 12v4',
+  bulb: 'M9 17a6 6 0 116 0v1H9zM10 21h4',
+  drop: 'M12 3s7 7.500 7 12a7 7 0 01-14 0c0-4.500 7-12 7-12z',
+  wifi: 'M2 9a15 15 0 0120 0M5 13a10 10 0 0114 0M8.500 16.500a5 5 0 017 0M12 20h.01',
+  shoe: 'M3 7h6l2 4 7 2a3 3 0 013 3v2H3zM3 15h18M11 11l-2 2',
+  watch: 'M12 7a5 5 0 100 10 5 5 0 000-10zM9 8l1-5h4l1 5M9 16l1 5h4l1-5M12 10v2l1.500 1',
+  pill: 'M4.500 13.500l9-9a4.200 4.200 0 016 6l-9 9a4.200 4.200 0 01-6-6zM9 9l6 6',
+  doctor: 'M5 3v6a4.500 4.500 0 009 0V3M9.500 13.500v2a5 5 0 0010 0V13M19.500 9a2 2 0 100 4 2 2 0 000-4z',
+  dumbbell: 'M3 10v4M6 7v10M18 7v10M21 10v4M6 12h12',
+  glass: 'M4 4h16l-8 9zM12 13v7M8 20h8',
+  tv: 'M3 7h18v13H3zM8 3l4 4 4-4M10 11l5 2.500-5 2.500z',
 };
 
 function svgEl(tag, attrs) {
@@ -201,7 +221,7 @@ for (const box of [$('sheet'), $('viewer')]) {
 })();
 
 /* Formulario único para toda la app.
-   fields: {key, label, type: seg|money|text|date|select|chips|pills|icons|colors|pin, options, show(values)}
+   fields: {key, label, type: seg|money|text|date|select|chips|list|pills|icons|colors|pin, options, show(values)}
    more: true esconde el campo tras "Más opciones" (salvo que always(values)). submit: true en chips guarda al tocar.
    options puede ser una lista [[valor, texto, icono, color]] o una función(values).
    onSave(values) devuelve un texto de error, o nada si todo salió bien. */
@@ -232,12 +252,12 @@ function openForm({ title, text = [], fields, values = {}, save = 'Guardar', onS
           v[field.key] = value;
           const wait = field.wait?.(v); // falta elegir algo más antes de guardar
           draw();
-          if (wait) form.querySelector('.pills')?.scrollIntoView({ block: 'nearest' });
+          if (wait) form.querySelector('.rows')?.parentElement.scrollIntoView({ block: 'nearest' });
           if (field.submit && !wait) { v.picked = true; form.requestSubmit(); }
         } });
         if (!field.submit || (field.wait && v.opened)) b.ariaPressed = String(v[field.key] === value);
         if (field.type === 'seg' || field.type === 'pills') b.textContent = text;
-        else if (field.type === 'chips') b.append(badge(ico, color), text);
+        else if (field.type === 'chips' || field.type === 'list') b.append(badge(ico, color), text);
         else if (field.type === 'icons') { b.append(icon(value)); b.ariaLabel = text; }
         else { const dot = el('span', { className: 'badge' }); dot.style.background = value; b.append(dot); b.ariaLabel = text; }
         return b;
@@ -263,9 +283,11 @@ function openForm({ title, text = [], fields, values = {}, save = 'Guardar', onS
       control = el('select', { onchange: () => { v[key] = control.value; draw(); } });
       wrap = el('label', { className: 'field' }, label, control);
     } else {
-      control = el('div', { className: type === 'seg' || type === 'pills' ? type : field.submit ? 'chips quick' : 'chips' });
+      control = el('div', { className: type === 'seg' || type === 'pills' ? type : type === 'list' ? 'rows' : field.submit ? 'chips quick' : 'chips' });
       wrap = el('div', { className: 'field', role: 'group', ariaLabel: label }, type === 'seg' && !field.titled ? null : label, control);
     }
+    // back: la etiqueta es un botón para volver atrás.
+    if (field.back) wrap.replaceChild(button(label, () => { field.back(v); draw(); }, 'back'), wrap.firstChild);
     parts.push({ field, wrap, control });
   }
 
