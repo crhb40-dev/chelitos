@@ -201,7 +201,7 @@ for (const box of [$('sheet'), $('viewer')]) {
 })();
 
 /* Formulario único para toda la app.
-   fields: {key, label, type: seg|money|text|date|select|chips|icons|colors|pin, options, show(values), focus}
+   fields: {key, label, type: seg|money|text|date|select|chips|icons|colors|pin, options, show(values)}
    more: true esconde el campo tras "Más opciones" (salvo que always(values)). submit: true en chips guarda al tocar.
    options puede ser una lista [[valor, texto, icono, color]] o una función(values).
    onSave(values) devuelve un texto de error, o nada si todo salió bien. */
@@ -304,6 +304,5 @@ function openForm({ title, text = [], fields, values = {}, save = 'Guardar', onS
     ...(del ? [del] : []), button('Cancelar', closeSheet, ''));
   draw();
   $('sheet').showModal();
-  parts.find((p) => p.field.focus)?.control.focus(); // abre el teclado del teléfono
   $('sheet').scrollTop = 0;
 }

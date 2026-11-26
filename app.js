@@ -120,7 +120,7 @@ function moveForm(x, preset = {}) {
         options: (v) => categoryOptions(v.type === 'in' ? 'in' : 'out'), show: (v) => !linked && isType('in', 'out')(v) };
       return [
         { key: 'type', label: 'Tipo', type: 'seg', options: [['out', 'Gasto'], ['in', 'Entrada'], ['transfer', 'Transferir']], show: () => !linked },
-        { key: 'amount', label: (v) => `Monto (${symbol(curOf(v.account) || home)})`, type: 'money', focus: quick },
+        { key: 'amount', label: (v) => `Monto (${symbol(curOf(v.account) || home)})`, type: 'money' },
         ...(quick ? [] : [category]),
         { key: 'method', label: (v) => v.type === 'in' ? 'Cómo lo recibiste' : 'Con qué pagaste', type: 'seg', titled: true, ...hide,
           options: Object.entries(KIND).map(([k, kind]) => [k, kind[0]]), show: isType('in', 'out') },
