@@ -187,9 +187,9 @@ function openForm({ title, text = [], fields, values = {}, save = 'Guardar', onS
     const { key, type } = field;
     const label = typeof field.label === 'function' ? field.label(v) : field.label;
     let control, wrap;
-    if (['money', 'text', 'date', 'pin'].includes(type)) {
+    if (['money', 'text', 'date', 'time', 'pin'].includes(type)) {
       control = el('input', {
-        type: type === 'date' ? 'date' : type === 'pin' ? 'password' : 'text',
+        type: type === 'date' || type === 'time' ? type : type === 'pin' ? 'password' : 'text',
         inputMode: type === 'money' ? 'decimal' : type === 'pin' ? 'numeric' : 'text',
         className: type === 'money' ? 'money' : '', autocomplete: 'off', value: v[key] ?? '',
         maxLength: type === 'pin' ? 6 : 60, placeholder: field.placeholder || (type === 'money' ? '0' : ''),

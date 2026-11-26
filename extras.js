@@ -177,6 +177,57 @@ function guide() {
 }
 window.afterStart = () => { if (!prefs.seen && !window.locked) guide(); };
 
+/* ---------- Notificaciones del teléfono (solo Android) ---------- */
+let notifier = plugins?.LocalNotifications || null;
+let syncing = Promise.resolve();
+// Borra las programadas y las vuelve a crear con los datos actuales. Una a la vez.
+function syncNotices() {
+  if (!notifier || !ready) return syncing;
+  syncing = syncing.then(async () => {
+    const pending = (await notifier.getPending()).notifications;
+    if (pending.length) await notifier.cancel({ notifications: pending.map((n) => ({ id: n.id })) });
+    if ((await notifier.checkPermissions()).display !== 'granted') return;
+    const notifications = L.notificationPlan(data, prefs, new Date(), Boolean(lockData)).map(({ at, on, ...n }) => ({
+      ...n, smallIcon: 'ic_stat_dinero', schedule: at ? { at, allowWhileIdle: true } : { on, allowWhileIdle: true },
+    }));
+    if (notifications.length) await notifier.schedule({ notifications });
+  }).catch((e) => console.warn('notificaciones:', e.message));
+  return syncing;
+}
+window.syncNotices = syncNotices;
+
+async function setNotify(change) {
+  if (change.payments || change.daily) {
+    try {
+      let state = (await notifier.checkPermissions()).display;
+      if (state !== 'granted') { window.skipLock = true; state = (await notifier.requestPermissions()).display; }
+      if (state !== 'granted') { toast('Sin permiso. Actívalo en Ajustes del teléfono, en Notificaciones de Dinero.'); return; }
+    } catch (e) { console.warn(e.message); toast('No se pudo activar.'); return; }
+  }
+  await savePrefs({ notify: { ...prefs.notify, ...change } });
+  render(true);
+  await syncNotices();
+}
+
+function timeForm() {
+  openForm({ title: 'Hora del recordatorio', values: { time: prefs.notify.time }, fields: [{ key: 'time', label: 'Hora', type: 'time' }],
+    onSave: async (v) => {
+      if (!v.time) return 'Elige una hora.';
+      await setNotify({ time: v.time.slice(0, 5) });
+    } });
+}
+
+settingsSections.push((view) => {
+  if (!notifier) return;
+  const yesNo = (label, key) => el('div', { className: 'field choice', role: 'group', ariaLabel: label }, label,
+    el('div', { className: 'seg' }, ...[[true, 'Sí'], [false, 'No']].map(([v, text]) => el('button', { type: 'button', textContent: text,
+      ariaPressed: String(prefs.notify[key] === v), onclick: () => setNotify({ [key]: v }) }))));
+  view.append(section('Notificaciones'), yesNo('Avisar pagos fijos (el día antes y el mismo día, 9:00)', 'payments'),
+    yesNo('Recordatorio diario para anotar', 'daily'),
+    ...(prefs.notify.daily ? [button(`Hora del recordatorio: ${prefs.notify.time}`, timeForm)] : []),
+    el('p', { className: 'dim', textContent: 'La hora puede variar unos minutos según el ahorro de batería.' }));
+});
+
 /* ---------- Personalización ---------- */
 function nameForm() {
   openForm({ title: 'Tu nombre', values: { name: prefs.name }, fields: [{ key: 'name', label: 'Nombre para el inicio (vacío = Mi dinero)', type: 'text' }],

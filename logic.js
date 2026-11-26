@@ -259,6 +259,10 @@
       lockAfter: [0, 60, 300].includes(p.lockAfter) ? p.lockAfter : 60,
       lastBackup: isDate(p.lastBackup) ? p.lastBackup : '',
       seen: p.seen === true,
+      notify: {
+        payments: p.notify?.payments === true, daily: p.notify?.daily === true,
+        time: /^([01]\d|2[0-3]):[0-5]\d$/.test(p.notify?.time) ? p.notify.time : '20:00',
+      },
       accent: ACCENTS.some(([c]) => c === p.accent) ? p.accent : ACCENTS[0][0],
       hidden: p.hidden === true,
       order,
@@ -340,8 +344,36 @@
     return '\ufeff' + ['Fecha,Tipo,Categoría,Nota,Cuenta,Moneda,Monto,Hacia,Recibido', ...rows].join('\r\n');
   }
 
+  // Avisos del teléfono: pagos fijos (el día antes y el mismo día, 9:00) y recordatorio diario.
+  // private = hay bloqueo: la notificación se ve con el teléfono bloqueado, así que va sin montos.
+  function notificationPlan(d, p, now, locked) {
+    const plan = [];
+    if (p.notify.daily) {
+      const [hour, minute] = p.notify.time.split(':').map(Number);
+      plan.push({ id: 1, title: 'Dinero', body: '¿Anotaste lo de hoy?', on: { hour, minute } });
+    }
+    if (!p.notify.payments) return plan;
+    const limit = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 62);
+    const found = [];
+    for (const r of d.recurring) {
+      const symbol = { peso: '$', usd: 'US$', eur: '€' }[curOf(d, r.account)];
+      const amount = locked || p.hidden ? '' : ` (${symbol}${(r.amount / 100).toLocaleString('en-US', { maximumFractionDigits: 2 })})`;
+      let date = r.next;
+      for (let i = 0; i < 400; i++, date = nextDate(date, r.freq, r.day)) {
+        const [y, m, day] = parts(date);
+        if (new Date(y, m - 1, day) > limit) break;
+        for (const [before, when] of [[1, 'Mañana'], [0, 'Hoy']]) {
+          const at = new Date(y, m - 1, day - before, 9, 0);
+          if (at > now) found.push({ title: r.type === 'in' ? 'Cobro programado' : 'Pago programado', body: `${when}: ${r.name}${amount}`, at });
+        }
+      }
+    }
+    // Android limita cuántas alarmas admite: bastan las próximas.
+    return plan.concat(found.sort((a, b) => a.at - b.at).slice(0, 50).map((n, i) => ({ id: 100 + i, ...n })));
+  }
+
   const api = {
-    calendar, compare, dailyAllowance, totalPesos, reminders, csv,
+    notificationPlan,    calendar, compare, dailyAllowance, totalPesos, reminders, csv,
     keypad, ACCENTS, BLOCKS, prefs,
     COLORS, FIXED, defaultData, parseAmount, today, shiftMonth, nextDate, load, balances, summary,
     BUDGET, view, curOf, spentByKind, windowEnd, lastMonths, search, budgets, debtPaid, payRecurring, removeCategory, removeAccount,

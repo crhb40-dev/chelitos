@@ -119,7 +119,7 @@ async function lockForm() {
   let hasBio = false;
   try { hasBio = Boolean(bioPlugin && (await bioPlugin.checkBiometry()).isAvailable); } catch (e) { console.warn(e.message); }
   openForm({
-    title: lockData ? 'Cambiar bloqueo' : 'Activar bloqueo',
+    title: lockData ? 'Cambiar PIN' : 'Activar bloqueo',
     values: { bio: hasBio && (lockData ? lockData.bio : true) ? 'yes' : 'no' },
     fields: [
       { key: 'old', label: 'PIN actual', type: 'pin', show: () => Boolean(lockData) },
@@ -136,22 +136,32 @@ async function lockForm() {
       try { await store.set(LOCK, JSON.stringify(next)); } catch { return 'No se pudo guardar.'; }
       lockData = next;
       render(true);
+      window.syncNotices?.();
       toast('Bloqueo guardado');
     },
-    onDelete: lockData && (async (v) => {
+  });
+}
+
+function removeLockForm() {
+  openForm({
+    title: 'Quitar bloqueo', save: 'Quitar bloqueo',
+    text: [`La app se abrirá sin pedir PIN${lockData.face || lockData.bio ? ' ni huella o cara' : ''}.`],
+    fields: [{ key: 'old', label: 'Escribe tu PIN actual', type: 'pin' }],
+    onSave: async (v) => {
       const problem = await tryPin(v.old);
-      if (problem) return problem === 'PIN incorrecto.' ? 'Escribe tu PIN actual para quitar el bloqueo.' : problem;
-      await store.remove(LOCK);
+      if (problem) return problem;
+      try { await store.remove(LOCK); } catch { return 'No se pudo guardar.'; }
       lockData = null;
       render(true);
+      window.syncNotices?.();
       toast('Bloqueo quitado');
-    }),
-    deleteText: 'Quitar bloqueo',
+    },
   });
 }
 
 settingsSections.push((view) => view.append(section('Seguridad'),
   ...(lockData ? [choice('Pedir el bloqueo', prefs.lockAfter, [[0, 'Al salir'], [60, '1 minuto'], [300, '5 minutos']], 'lockAfter')] : []),
-  el('div', {}, button(lockData ? 'Cambiar o quitar el bloqueo' : `Activar bloqueo con PIN${bioPlugin ? ' o huella' : ''}`, lockForm),
+  el('div', {}, button(lockData ? (bioPlugin ? 'Cambiar PIN o huella' : 'Cambiar PIN') : `Activar bloqueo con PIN${bioPlugin ? ' o huella' : ''}`, lockForm),
+    lockData ? button('Quitar bloqueo', removeLockForm, 'wide neg') : null,
     canFace && lockData ? button(lockData.face ? `Quitar ${FACE}` : `Usar ${FACE}`, lockData.face ? disableFace : enableFace) : null,
     canFace && !lockData ? empty(`Activa primero un PIN para poder usar ${FACE}.`) : null)));

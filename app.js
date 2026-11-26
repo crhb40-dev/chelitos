@@ -27,7 +27,14 @@ const curSwitch = () => el('div', { className: 'seg cur', role: 'group', ariaLab
 const categoryOptions = (type) => data.categories.filter((c) => c.type === type).map((c) => [c.id, c.name, c.icon, c.color]);
 
 // Los cambios se hacen sobre una copia, se validan y solo entonces reemplazan lo guardado.
-async function update(change, done) {
+// En fila: dos cambios casi a la vez no deben pisarse.
+let queue = Promise.resolve();
+function update(change, done) {
+  const run = queue.then(() => applyChange(change, done));
+  queue = run.catch(() => {});
+  return run;
+}
+async function applyChange(change, done) {
   let next;
   try {
     next = structuredClone(data);
@@ -41,6 +48,7 @@ async function update(change, done) {
   const before = data;
   data = next;
   render(true);
+  window.syncNotices?.();
   if (!done) return;
   // Deshacer solo vale si no hubo otro cambio después.
   toast(done, async () => {
@@ -48,6 +56,7 @@ async function update(change, done) {
     try { await store.set(KEY, JSON.stringify(before)); } catch { toast('No se pudo deshacer.'); return; }
     data = before;
     render(true);
+    window.syncNotices?.();
     toast('Deshecho');
   });
 }
@@ -149,7 +158,7 @@ screens.home = (view) => {
   const here = mine(), now = L.today().slice(0, 7), s = L.summary(here, now), b = L.balances(data, cur);
   const big = el('div', { className: 'big' + (b.total < 0 && !prefs.hidden ? ' neg' : '') });
   const eye = el('button', { className: 'icon-btn', ariaLabel: prefs.hidden ? 'Mostrar saldos' : 'Ocultar saldos', ariaPressed: String(prefs.hidden),
-    onclick: async () => { await savePrefs({ hidden: !prefs.hidden }); render(true); } }, icon(prefs.hidden ? 'eyeoff' : 'eye'));
+    onclick: async () => { await savePrefs({ hidden: !prefs.hidden }); render(true); window.syncNotices?.(); } }, icon(prefs.hidden ? 'eyeoff' : 'eye'));
   view.append(
     el('div', { className: 'head' }, el('h1', { textContent: prefs.name ? `Hola, ${prefs.name}` : 'Mi dinero' }), el('div', { className: 'tools' }, eye,
       el('button', { className: 'icon-btn', ariaLabel: 'Ajustes', onclick: () => go('settings') }, icon('gear')))),
@@ -479,7 +488,7 @@ plugins?.App.addListener('backButton', () => {
   else if (tab !== 'home') go('home');
   else plugins.App.exitApp();
 });
-document.addEventListener('visibilitychange', () => { if (!document.hidden && !$('sheet').open) render(true); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && !$('sheet').open) { render(true); window.syncNotices?.(); } });
 
 async function start() {
   try {
@@ -497,6 +506,7 @@ async function start() {
     ready = true;
     render();
     window.afterStart?.();
+    window.syncNotices?.();
   } catch (e) {
     // No tocar datos ilegibles: se bloquea la app para no sobrescribirlos.
     console.error(e);

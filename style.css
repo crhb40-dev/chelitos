@@ -78,7 +78,7 @@ form h2{font-size:20px}
 .chips button{display:flex;flex-direction:column;align-items:center;gap:5px;padding:8px 2px;border-radius:16px;border:2px solid transparent;background:var(--bg);font-size:11px;color:var(--text);overflow-wrap:anywhere}
 .chips button[aria-pressed=true]{border-color:var(--lime)}
 input,select{min-height:48px;width:100%;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:0 14px;font-size:16px;user-select:text}
-input[type=date]{-webkit-appearance:none;appearance:none;display:block;min-width:0}
+input[type=date],input[type=time]{-webkit-appearance:none;appearance:none;display:block;min-width:0}
 input.money{font-size:30px;font-weight:700;min-height:62px}
 .primary{background:var(--lime);color:var(--ink);font-weight:700;border-radius:16px;min-height:56px}
 .error{color:var(--coral);font-size:14px}
