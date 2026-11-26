@@ -201,7 +201,7 @@ for (const box of [$('sheet'), $('viewer')]) {
 })();
 
 /* Formulario único para toda la app.
-   fields: {key, label, type: seg|money|text|date|select|chips|icons|colors|pin, options, show(values)}
+   fields: {key, label, type: seg|money|text|date|select|chips|pills|icons|colors|pin, options, show(values)}
    more: true esconde el campo tras "Más opciones" (salvo que always(values)). submit: true en chips guarda al tocar.
    options puede ser una lista [[valor, texto, icono, color]] o una función(values).
    onSave(values) devuelve un texto de error, o nada si todo salió bien. */
@@ -230,11 +230,13 @@ function openForm({ title, text = [], fields, values = {}, save = 'Guardar', onS
       control.replaceChildren(...options.map(([value, text, ico, color]) => {
         const b = el('button', { type: 'button', onclick: () => {
           v[field.key] = value;
+          const wait = field.wait?.(v); // falta elegir algo más antes de guardar
           draw();
-          if (field.submit) { v.picked = true; form.requestSubmit(); }
+          if (wait) form.querySelector('.pills')?.scrollIntoView({ block: 'nearest' });
+          if (field.submit && !wait) { v.picked = true; form.requestSubmit(); }
         } });
-        if (!field.submit) b.ariaPressed = String(v[field.key] === value);
-        if (field.type === 'seg') b.textContent = text;
+        if (!field.submit || (field.wait && v.opened)) b.ariaPressed = String(v[field.key] === value);
+        if (field.type === 'seg' || field.type === 'pills') b.textContent = text;
         else if (field.type === 'chips') b.append(badge(ico, color), text);
         else if (field.type === 'icons') { b.append(icon(value)); b.ariaLabel = text; }
         else { const dot = el('span', { className: 'badge' }); dot.style.background = value; b.append(dot); b.ariaLabel = text; }
@@ -261,7 +263,7 @@ function openForm({ title, text = [], fields, values = {}, save = 'Guardar', onS
       control = el('select', { onchange: () => { v[key] = control.value; draw(); } });
       wrap = el('label', { className: 'field' }, label, control);
     } else {
-      control = el('div', { className: type === 'seg' ? 'seg' : field.submit ? 'chips quick' : 'chips' });
+      control = el('div', { className: type === 'seg' || type === 'pills' ? type : field.submit ? 'chips quick' : 'chips' });
       wrap = el('div', { className: 'field', role: 'group', ariaLabel: label }, type === 'seg' && !field.titled ? null : label, control);
     }
     parts.push({ field, wrap, control });

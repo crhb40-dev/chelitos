@@ -44,6 +44,7 @@ function recurringForm(r) {
       { key: 'name', label: 'Nombre', type: 'text', placeholder: 'Ej. Alquiler, Sueldo' },
       { key: 'amount', label: (v) => `Monto (${symbol(curOf(v.account))})`, type: 'money' },
       { key: 'category', label: 'Categoría', type: 'chips', options: (v) => categoryOptions(v.type) },
+      subField(),
       { key: 'account', label: 'Cuenta', type: 'select', options: () => accountOptions() },
       { key: 'freq', label: 'Se repite', type: 'select', options: Object.entries(FREQ) },
       { key: 'next', label: 'Próxima fecha', type: 'date' },
@@ -55,7 +56,7 @@ function recurringForm(r) {
       if (!v.next) return 'Elige la próxima fecha.';
       // Si no cambias la fecha se conserva el día original (p. ej. 31 aunque este mes sea 28).
       const day = r && r.next === v.next ? r.day : Number(v.next.slice(8));
-      return update((d) => upsert(d.recurring, { id: r?.id || uid(), name: v.name.trim(), type: v.type, amount, account: v.account, category: v.category, freq: v.freq, day, next: v.next }), 'Pago fijo guardado');
+      return update((d) => upsert(d.recurring, { id: r?.id || uid(), name: v.name.trim(), type: v.type, amount, account: v.account, category: v.category, ...(v.sub && { sub: v.sub }), freq: v.freq, day, next: v.next }), 'Pago fijo guardado');
     },
     onDelete: r && drop('recurring', r.id, 'Pago fijo borrado'),
   });

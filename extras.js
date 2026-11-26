@@ -10,20 +10,21 @@ function favoriteForm(f, from) {
   if (!base && !first) { toast(`Primero crea una cuenta en ${CUR[cur][0].toLowerCase()}.`); accountForm(); return; }
   openForm({
     title: f ? 'Editar frecuente' : 'Nuevo frecuente',
-    values: base ? { type: base.type, name: f ? f.name : base.note || category(base.category).name, amount: asInput(base.amount), account: base.account, category: base.category }
+    values: base ? { type: base.type, name: f ? f.name : base.note || category(base.category).name, amount: asInput(base.amount), account: base.account, category: base.category, sub: base.sub }
       : { type: 'out', account: first.id },
     fields: [
       { key: 'type', label: 'Tipo', type: 'seg', options: [['out', 'Gasto'], ['in', 'Entrada']] },
       { key: 'name', label: 'Nombre', type: 'text', placeholder: 'Ej. Pasaje, Almuerzo' },
       { key: 'amount', label: (v) => `Monto (${symbol(curOf(v.account))})`, type: 'money' },
       { key: 'category', label: 'Categoría', type: 'chips', options: (v) => categoryOptions(v.type) },
+      subField(),
       { key: 'account', label: 'Cuenta', type: 'select', options: () => accountOptions() },
     ],
     onSave: (v) => {
       const amount = L.parseAmount(v.amount);
       if (!v.name.trim()) return 'Ponle un nombre.';
       if (!amount) return BAD_AMOUNT;
-      return update((d) => upsert(d.favorites, { id: f?.id || uid(), name: v.name.trim(), type: v.type, amount, account: v.account, category: v.category }), 'Frecuente guardado');
+      return update((d) => upsert(d.favorites, { id: f?.id || uid(), name: v.name.trim(), type: v.type, amount, account: v.account, category: v.category, ...(v.sub && { sub: v.sub }) }), 'Frecuente guardado');
     },
     onDelete: f && drop('favorites', f.id, 'Frecuente borrado'),
   });
@@ -33,7 +34,7 @@ let adding = false; // evita anotar dos veces con un doble toque
 async function useFavorite(f) {
   if (adding) return;
   adding = true;
-  const problem = await update((d) => d.movements.push({ id: uid(), type: f.type, amount: f.amount, account: f.account, category: f.category, note: f.name, date: L.today() }),
+  const problem = await update((d) => d.movements.push({ id: uid(), type: f.type, amount: f.amount, account: f.account, category: f.category, ...(f.sub && { sub: f.sub }), note: f.name, date: L.today() }),
     `${f.name} anotado: ${money(f.amount, curOf(f.account))}`);
   if (problem) toast(problem);
   setTimeout(() => { adding = false; }, 800);

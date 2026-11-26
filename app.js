@@ -47,6 +47,11 @@ function switchCurrency(k) {
     { duration: 320, delay: Math.min(i, 6) * 35, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' }));
 }
 const categoryOptions = (type) => data.categories.filter((c) => c.type === type).map((c) => [c.id, c.name, c.icon, c.color]);
+const subsOf = (id) => category(id)?.subs || [];
+// Fila de subcategorías: solo aparece si la categoría elegida tiene.
+const subField = (extra = {}) => ({ key: 'sub', label: 'Subcategoría', type: 'pills',
+  options: (v) => [['', 'General'], ...subsOf(v.category).map((s) => [s.id, s.name])],
+  show: (v) => subsOf(v.category).length > 0, ...extra });
 
 // Los cambios se hacen sobre una copia, se validan y solo entonces reemplazan lo guardado.
 // En fila: dos cambios casi a la vez no deben pisarse.
@@ -117,11 +122,15 @@ function moveForm(x, preset = {}) {
       const hide = quick && { more: true };
       const forTransfer = quick && { more: true, always: isType('transfer') };
       const category = { key: 'category', label: quick ? 'Toca una categoría para guardar' : 'Categoría', type: 'chips', submit: quick,
+        // Al anotar, si la categoría tiene subcategorías, se guarda al tocar una de ellas.
+        wait: quick ? (v) => { v.opened = subsOf(v.category).length > 0; return v.opened; } : undefined,
         options: (v) => categoryOptions(v.type === 'in' ? 'in' : 'out'), show: (v) => !linked && isType('in', 'out')(v) };
+      const sub = subField({ label: quick ? 'Toca una subcategoría para guardar' : 'Subcategoría', submit: quick,
+        show: (v) => category.show(v) && (!quick || v.opened) && subsOf(v.category).length > 0 });
       return [
         { key: 'type', label: 'Tipo', type: 'seg', options: [['out', 'Gasto'], ['in', 'Entrada'], ['transfer', 'Transferir']], show: () => !linked },
         { key: 'amount', label: (v) => `Monto (${symbol(curOf(v.account) || home)})`, type: 'money' },
-        ...(quick ? [] : [category]),
+        ...(quick ? [] : [category, sub]),
         { key: 'method', label: (v) => v.type === 'in' ? 'Cómo lo recibiste' : 'Con qué pagaste', type: 'seg', titled: true, ...hide,
           options: Object.entries(KIND).map(([k, kind]) => [k, kind[0]]), show: isType('in', 'out') },
         { key: 'account', label: 'Cuenta', type: 'select', options: payOptions, ...forTransfer },
@@ -129,7 +138,7 @@ function moveForm(x, preset = {}) {
         { key: 'received', label: (v) => `Cuánto llega (${symbol(curOf(v.to) || cur)})`, type: 'money', show: cross, ...forTransfer },
         { key: 'note', label: 'Nota', type: 'text', placeholder: 'Opcional', ...hide },
         { key: 'date', label: 'Fecha', type: 'date', ...hide },
-        ...(quick ? [category] : []),
+        ...(quick ? [category, sub] : []),
       ];
     })(),
     onSave: (v) => {
@@ -146,6 +155,7 @@ function moveForm(x, preset = {}) {
       const item = {
         id: x?.id || uid(), type: v.type, amount, account: v.account, note: v.note.trim(), date: v.date,
         category: linked ? x.category : v.type === 'transfer' ? '' : v.category,
+        ...(!linked && v.type !== 'transfer' && v.sub && { sub: v.sub }),
         ...(v.type === 'transfer' && { to: v.to }), ...(received && { received }), ...(linked && { debt: x.debt }),
       };
       // Pasa al apartado donde quedó anotado, para que se vea.
@@ -171,7 +181,8 @@ function moveRow(x, opts) {
   const amount = arrived ? x.received : x.amount;
   const other = x.received ? ` · ${money(x.amount, curOf(x.account))} → ${money(x.received, curOf(x.to))}` : '';
   return line({
-    lead: badge(c.icon, c.color), title: x.note || c.name, sub: `${opts?.grouped ? '' : `${dayName(x.date)} · `}${where}${other}`,
+    lead: badge(c.icon, c.color), title: x.note || L.subName(data, x.category, x.sub) || c.name,
+    sub: `${opts?.grouped ? '' : `${dayName(x.date)} · `}${x.note && x.sub ? `${L.subName(data, x.category, x.sub)} · ` : ''}${where}${other}`,
     value: (x.type === 'in' || arrived ? '+' : x.type === 'out' || x.received ? '−' : '') + money(amount),
     valueClass: x.type === 'in' ? 'pos' : '', onclick: () => moveForm(x),
   });
@@ -342,7 +353,10 @@ screens.reports = (view) => {
     section('Gastos por categoría'),
     el('div', { className: 'card' }, ...(s.expense ? [donut(s), ...s.byCategory.map(([id, v]) => {
       const c = category(id);
-      return line({ lead: badge(c.icon, c.color), title: c.name, sub: `${Math.round(v * 100 / s.expense)}%`, value: money(v),
+      const parts = L.spentBySub(s.items, id);
+      const detail = parts.some(([sub]) => sub)
+        ? parts.map(([sub, n]) => `${L.subName(data, id, sub) || 'General'} ${money(n)}`).join(' · ') : '';
+      return line({ lead: badge(c.icon, c.color), title: c.name, sub: [`${Math.round(v * 100 / s.expense)}%`, detail].filter(Boolean).join(' · '), value: money(v),
         onclick: () => { Object.assign(filters, { text: '', account: '', category: id, from: `${month}-01`, to: lastDay(month) }); go('moves'); } });
     })] : [empty('Sin gastos este mes.')])),
     section(chartEnd === L.today().slice(0, 7) ? 'Últimos 6 meses' : 'Comparación de 6 meses'),
@@ -389,16 +403,24 @@ const SYSTEM_ICONS = ['gear', 'swap', 'list', 'chart', 'target', 'eye', 'eyeoff'
 function categoryForm(c) {
   openForm({
     title: c ? 'Editar categoría' : 'Nueva categoría',
-    values: c ? { ...c } : { type: 'out', icon: 'dots', color: L.COLORS[0] },
+    values: c ? { ...c, ...Object.fromEntries(c.subs.map((s) => [`sub:${s.id}`, s.name])) } : { type: 'out', icon: 'dots', color: L.COLORS[0] },
     fields: [
       { key: 'type', label: 'Para', type: 'seg', options: [['out', 'Gastos'], ['in', 'Entradas']], show: () => !c },
       { key: 'name', label: 'Nombre', type: 'text' },
+      ...(c?.subs || []).map((s, i) => ({ key: `sub:${s.id}`, label: i ? '' : 'Subcategorías (borra el nombre para quitar una)', type: 'text', show: (v) => v.type === 'out' })),
+      { key: 'newSubs', label: 'Añadir subcategorías', type: 'text', placeholder: 'Ej. Café, Mascota', show: (v) => v.type === 'out' },
       { key: 'icon', label: 'Icono', type: 'icons', options: Object.keys(ICONS).filter((k) => !SYSTEM_ICONS.includes(k)).map((k, i) => [k, `Icono ${i + 1}`]) },
       { key: 'color', label: 'Color', type: 'colors', options: L.COLORS.map((x, i) => [x, `Color ${i + 1}`]) },
     ],
     onSave: (v) => {
       if (!v.name.trim()) return 'Ponle un nombre.';
-      return update((d) => upsert(d.categories, { id: c?.id || uid(), name: v.name.trim(), type: v.type, icon: v.icon, color: v.color, ...Object.fromEntries(Object.values(L.BUDGET).map((k) => [k, c?.[k] || 0])) }), 'Categoría guardada');
+      const id = c?.id || uid();
+      const subs = [...(c?.subs || []).map((s) => ({ id: s.id, name: v[`sub:${s.id}`].trim() })),
+        ...v.newSubs.split(',').map((name) => ({ id: uid(), name: name.trim() }))].filter((s) => s.name);
+      return update((d) => {
+        upsert(d.categories, { id, name: v.name.trim(), type: v.type, icon: v.icon, color: v.color, ...Object.fromEntries(Object.values(L.BUDGET).map((k) => [k, c?.[k] || 0])), subs: c?.subs || [] });
+        L.setSubs(d, id, subs);
+      }, 'Categoría guardada');
     },
     onDelete: c && !L.FIXED.includes(c.id) ? () => update((d) => L.removeCategory(d, c.id), 'Borrada. Sus movimientos pasaron a la categoría general.') : null,
   });

@@ -6,8 +6,21 @@
   // Categorías que el sistema necesita; no se borran.
   const FIXED = ['otro', 'ingreso', 'deudas', 'cobros'];
 
+  // Subcategorías de fábrica; la persona puede cambiarlas.
+  const SUBS = {
+    casa: ['Alquiler', 'Muebles', 'Limpieza', 'Reparaciones'],
+    comida: ['Supermercado', 'Restaurante', 'Delivery', 'Antojos'],
+    transporte: ['Gasolina', 'Pasaje', 'Taxi', 'Mantenimiento'],
+    servicios: ['Luz', 'Agua', 'Internet', 'Teléfono'],
+    ropa: ['Ropa', 'Calzado', 'Accesorios'],
+    salud: ['Medicinas', 'Consultas', 'Gimnasio'],
+    ocio: ['Salidas', 'Suscripciones', 'Juegos', 'Viajes'],
+  };
+  const defaultSubs = (id) => (SUBS[id] || []).map((name, i) => ({ id: `${id}-${i + 1}`, name }));
+  const subName = (d, category, sub) => d.categories.find((c) => c.id === category)?.subs.find((s) => s.id === sub)?.name || '';
+
   function defaultData() {
-    const cat = (id, name, type, icon, color) => ({ id, name, type, icon, color, budget: 0, budgetUsd: 0, budgetEur: 0 });
+    const cat = (id, name, type, icon, color) => ({ id, name, type, icon, color, budget: 0, budgetUsd: 0, budgetEur: 0, subs: defaultSubs(id) });
     return {
       app: 'dinero', version: 2,
       accounts: [{ id: 'cash', name: 'Efectivo', kind: 'cash', initial: 0, currency: 'peso' }],
@@ -76,6 +89,7 @@
     }
     for (const k of ['accounts', 'goals', 'debts']) for (const x of d[k] || []) if (x) x.currency ??= 'peso';
     for (const c of d.categories || []) if (c) for (const k of Object.values(BUDGET)) c[k] ??= 0;
+    for (const c of d.categories || []) if (c) c.subs ??= defaultSubs(c.id); // una lista vacía se respeta
     return d;
   }
 
@@ -89,15 +103,18 @@
     const money = (x) => CURRENCIES.includes(x.currency);
     const transfer = (x) => isCents(x.amount) && acc.has(x.account) && acc.has(x.to) && x.to !== x.account &&
       (curOf(d, x.account) === curOf(d, x.to) ? x.received === undefined : isCents(x.received));
-    const entry = (x) => isCents(x.amount) && acc.has(x.account) && cats.get(x.category)?.type === x.type;
+    const entry = (x) => isCents(x.amount) && acc.has(x.account) && cats.get(x.category)?.type === x.type &&
+      (x.sub === undefined || Boolean(cats.get(x.category).subs?.some?.((s) => s.id === x.sub)));
+    const subs = (list) => Array.isArray(list) && list.every((s) => s && isText(s.id) && isText(s.name)) &&
+      new Set(list.map((s) => s.id)).size === list.length;
     return d.accounts.length > 0 && FIXED.every((id) => cats.has(id)) &&
       d.accounts.every((a) => isText(a.name) && KINDS.includes(a.kind) && isCents(a.initial, -MAX) && money(a)) &&
       d.goals.every(money) && d.debts.every(money) &&
-      d.categories.every((c) => isText(c.name) && (c.type === 'in' || c.type === 'out') && isText(c.icon) &&
+      d.categories.every((c) => isText(c.name) && subs(c.subs) && (c.type === 'in' || c.type === 'out') && isText(c.icon) &&
         /^#[0-9a-fA-F]{6}$/.test(c.color) && Object.values(BUDGET).every((k) => isCents(c[k], 0))) &&
       d.movements.every((x) => isDate(x.date) && isText(x.note) &&
         (x.debt === undefined || debts.get(x.debt)?.currency === curOf(d, x.account)) &&
-        (x.type === 'transfer' ? transfer(x) : entry(x))) &&
+        (x.type === 'transfer' ? x.sub === undefined && transfer(x) : entry(x))) &&
       d.favorites.every((f) => isText(f.name) && entry(f)) &&
       d.goals.every((g) => isText(g.name) && isCents(g.target) && isCents(g.saved, 0)) &&
       d.recurring.every((r) => isText(r.name) && entry(r) && ['week', 'half', 'month'].includes(r.freq) &&
@@ -194,7 +211,7 @@
     const names = new Map(d.categories.map((c) => [c.id, c.name]));
     const q = plain(text.trim());
     return d.movements.filter((x) =>
-      (!q || plain(`${x.note} ${names.get(x.category) || 'transferencia'}`).includes(q)) &&
+      (!q || plain(`${x.note} ${names.get(x.category) || 'transferencia'} ${subName(d, x.category, x.sub)}`).includes(q)) &&
       (!category || x.category === category) && (!account || x.account === account || x.to === account) &&
       (!from || x.date >= from) && (!to || x.date <= to)).sort(newest);
   }
@@ -212,7 +229,7 @@
   function payRecurring(d, id, now, newId) {
     const r = d.recurring.find((x) => x.id === id);
     d.movements.push({
-      id: newId, type: r.type, amount: r.amount, account: r.account, category: r.category,
+      id: newId, type: r.type, amount: r.amount, account: r.account, category: r.category, ...(r.sub && { sub: r.sub }),
       note: r.name, date: r.next < now ? r.next : now,
     });
     r.next = nextDate(r.next, r.freq, r.day);
@@ -221,8 +238,22 @@
   function removeCategory(d, id) {
     if (FIXED.includes(id)) throw new Error('Esa categoría no se puede borrar.');
     const other = d.categories.find((c) => c.id === id).type === 'in' ? 'ingreso' : 'otro';
-    for (const x of [...d.movements, ...d.recurring, ...d.favorites]) if (x.category === id) x.category = other;
+    for (const x of [...d.movements, ...d.recurring, ...d.favorites]) if (x.category === id) { x.category = other; delete x.sub; }
     d.categories = d.categories.filter((c) => c.id !== id);
+  }
+
+  // Cambia las subcategorías; lo anotado en una que se quita se queda en su categoría.
+  function setSubs(d, id, subs) {
+    d.categories.find((c) => c.id === id).subs = subs;
+    const kept = new Set(subs.map((s) => s.id));
+    for (const x of [...d.movements, ...d.recurring, ...d.favorites]) if (x.category === id && !kept.has(x.sub)) delete x.sub;
+  }
+
+  // Gasto de una categoría repartido por subcategoría, de mayor a menor. '' = sin subcategoría.
+  function spentBySub(items, category) {
+    const total = {};
+    for (const x of items) if (x.type === 'out' && x.category === category) total[x.sub || ''] = (total[x.sub || ''] || 0) + x.amount;
+    return Object.entries(total).sort((a, b) => b[1] - a[1]);
   }
 
   function removeAccount(d, id) {
@@ -336,9 +367,9 @@
     const text = (s) => `"${(/^[=+\-@\t\r]/.test(s) ? "'" + s : s).replace(/"/g, '""')}"`;
     const num = (c) => (c / 100).toFixed(2);
     const TYPES = { in: 'Entrada', out: 'Gasto', transfer: 'Transferencia' };
-    const rows = [...d.movements].sort(newest).map((x) => [x.date, TYPES[x.type], text(name(d.categories, x.category)), text(x.note),
+    const rows = [...d.movements].sort(newest).map((x) => [x.date, TYPES[x.type], text(name(d.categories, x.category)), text(subName(d, x.category, x.sub)), text(x.note),
       text(name(d.accounts, x.account)), curOf(d, x.account), num(x.amount), x.to ? text(name(d.accounts, x.to)) : '', x.received ? num(x.received) : ''].join(','));
-    return '\ufeff' + ['Fecha,Tipo,Categoría,Nota,Cuenta,Moneda,Monto,Hacia,Recibido', ...rows].join('\r\n');
+    return '\ufeff' + ['Fecha,Tipo,Categoría,Subcategoría,Nota,Cuenta,Moneda,Monto,Hacia,Recibido', ...rows].join('\r\n');
   }
 
   // Avisos del teléfono: pagos fijos (el día antes y el mismo día, 9:00) y recordatorio diario.
@@ -370,7 +401,7 @@
   }
 
   const api = {
-    notificationPlan,    calendar, compare, dailyAllowance, totalPesos, reminders, csv,
+    notificationPlan, subName, setSubs, spentBySub, calendar, compare, dailyAllowance, totalPesos, reminders, csv,
     ACCENTS, BLOCKS, prefs,
     COLORS, FIXED, defaultData, parseAmount, today, shiftMonth, nextDate, load, balances, summary,
     BUDGET, view, curOf, spentByKind, windowEnd, lastMonths, search, budgets, debtPaid, payRecurring, removeCategory, removeAccount,

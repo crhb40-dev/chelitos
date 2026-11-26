@@ -34,6 +34,7 @@ App para llevar tu dinero en el teléfono: lo que entra, lo que sale y lo que qu
 
 ## Qué hace
 - **Anotar rápido:** escribe el monto y toca la categoría. Botones *Gasté* y *Me entró*, gastos frecuentes de un toque y *Deshacer*.
+- **Subcategorías** de gastos (por ejemplo, Comida › Supermercado), que puedes cambiar a tu gusto.
 - **Pesos, dólares y euros**, cada uno por separado, y un total en pesos con la tasa que tú pongas.
 - **Cuentas** (efectivo, banco, tarjeta) y transferencias entre ellas.
 - **Reportes:** gráficos por categoría, comparación de 6 meses, calendario y resumen del mes.

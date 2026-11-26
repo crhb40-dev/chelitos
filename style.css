@@ -109,6 +109,9 @@ dialog.fast form{gap:10px}
 dialog.fast form>h2{display:none}
 dialog.fast form{zoom:1}
 .more{color:var(--text);font-size:13px;min-height:44px;border:1px solid var(--line);border-radius:12px;background:var(--bg)}
+.pills{display:flex;flex-wrap:wrap;gap:8px}
+.pills button{padding:10px 14px;border-radius:20px;border:2px solid transparent;background:var(--bg);color:var(--text);font-size:13px}
+.pills button[aria-pressed=true]{border-color:var(--lime)}
 .chips.quick{grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
 .chips.quick button{padding:4px 0;font-size:10px}
 #toast{display:flex;align-items:center;justify-content:space-between;gap:12px}
