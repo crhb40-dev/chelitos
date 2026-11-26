@@ -20,6 +20,10 @@ App para llevar tu dinero en el teléfono: lo que entra, lo que sale y lo que qu
 3. Toca **Añadir a pantalla de inicio** y luego **Añadir**.
 4. Ábrela desde su icono. La primera vez, con internet.
 
+## Videos
+- ▶️ **[Presentación de la app](https://crhb40-dev.github.io/chelitos/videos/Chelitos-presentacion.mp4)** (35 s)
+- ▶️ **[Cómo instalarla en iPhone](https://crhb40-dev.github.io/chelitos/videos/Chelitos-instalar-en-iPhone.mp4)** (35 s). Las pantallas de Safari son ilustraciones y pueden variar según la versión de iOS.
+
 ## Capturas (con datos de ejemplo)
 
 | Gráficos | Calendario | Historial | Planes |
